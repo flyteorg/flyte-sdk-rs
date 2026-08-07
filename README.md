@@ -97,7 +97,34 @@ pod), so it won't render as a full run in the console; running as a real
 in-cluster task container is the same code path with the backend supplying the
 args/env.
 
-## Running as a real task container
+## Demo: run as a real task container on a cluster
+
+Build the worker image (assembles a docker context containing this repo plus
+the `../flyte-sdk/rs_controller` path dep) and push it somewhere the cluster
+can pull — the image must be **publicly pullable** (e.g. a public ghcr.io
+package; flip visibility in the package settings after the first push):
+
+```bash
+IMAGE=ghcr.io/unionai-oss/flyte-sdk-rs-demo:v2 ./scripts/build-image.sh --push
+```
+
+Launch it as a task (the launcher uses the Python SDK next door purely as a
+client — the task container runs only the Rust binary):
+
+```bash
+uv run --project ../flyte-sdk python scripts/run_demo.py \
+    --image ghcr.io/unionai-oss/flyte-sdk-rs-demo:v2 \
+    --config ~/.flyte/demo-config.yaml --project flytesnacks --domain development
+# run: u8k4rg4fmjdmw8pxm7cs
+# url: https://demo.hosted.unionai.cloud/v2/domain/development/project/flytesnacks/runs/u8k4rg4fmjdmw8pxm7cs
+# outputs: ActionOutputs(o0="demo: mean=21 over 2 values")
+```
+
+The console then shows the run with the root action `a0` plus one child trace
+action per `#[flyte::trace]` step (`double`, `compute_stats`, `describe`),
+all recorded by the Rust SDK from inside the container.
+
+## Worker container contract
 
 The worker honors the Python SDK's container contract, so the backend can
 launch it like any task:
