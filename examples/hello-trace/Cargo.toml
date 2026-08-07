@@ -1,0 +1,11 @@
+[package]
+name = "hello-trace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+flyte = { path = "../../crates/flyte" }
+serde = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["crates/flyte", "crates/flyte-macros", "examples/hello-trace"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+flyteidl2 = "=2.0.37"
+prost = { version = "0.13", features = ["std"] }
+tokio = { version = "1", features = ["full"] }
+pyo3 = { version = "0.24", features = ["abi3-py310"] }
+pyo3-async-runtimes = { version = "0.24", features = ["tokio-runtime"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
+tracing = "0.1"
