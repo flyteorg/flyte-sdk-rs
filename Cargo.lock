@@ -355,6 +355,7 @@ dependencies = [
 [[package]]
 name = "flyte_core"
 version = "0.1.0"
+source = "git+https://github.com/flyteorg/flyte-sdk?rev=580a35ca4e26bd5944a5fd9f2370df7d7c1ef046#580a35ca4e26bd5944a5fd9f2370df7d7c1ef046"
 dependencies = [
  "async-trait",
  "base64 0.22.1",

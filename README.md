@@ -160,19 +160,17 @@ into the deployment plan.
 
 ## Building from source
 
-Until the `flyte` crate is published, building needs a sibling checkout of
-[flyte-sdk](https://github.com/flyteorg/flyte-sdk) next to this repository (a
-path dependency on its `rs_controller` crate):
-
-```
-<parent>/
-├── flyte-sdk/
-└── flyte-sdk-rs/
-```
-
 ```bash
 cargo build && cargo test
 ```
+
+Transport comes from the `flyte_core` crate in
+[flyte-sdk](https://github.com/flyteorg/flyte-sdk), pulled as a pinned git
+dependency — so no sibling checkout is needed. To develop against a local copy,
+point `crates/flyte/Cargo.toml` at a path instead, or add a `[patch]` section.
+
+That dependency is temporary: it links `libpython` (via pyo3) and disappears with
+the planned pure-Rust controller.
 
 ## Examples
 
