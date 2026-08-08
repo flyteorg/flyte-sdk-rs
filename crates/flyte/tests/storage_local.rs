@@ -10,7 +10,7 @@ fn local_put_get_roundtrip() {
 
     let uri = Storage::join(&base, "sub/inputs.pb");
     let payload = bytes::Bytes::from_static(b"hello flyte");
-    flyte::run_local(async {
+    flyte::run(async {
         storage.put(&uri, payload.clone()).await.unwrap();
         let back = storage.get(&uri).await.unwrap();
         assert_eq!(back, payload);
@@ -30,6 +30,6 @@ fn join_normalizes_trailing_slash() {
 #[test]
 fn unsupported_scheme_errors() {
     let storage = Storage::new();
-    let err = flyte::run_local(async { storage.get("ftp://nope/x").await }).unwrap_err();
+    let err = flyte::run(async { storage.get("ftp://nope/x").await }).unwrap_err();
     assert!(err.to_string().contains("unsupported storage scheme"), "{err}");
 }

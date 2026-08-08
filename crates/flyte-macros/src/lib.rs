@@ -4,6 +4,7 @@
 //! (controller/proto backends) can be swapped without touching user code.
 
 mod flyte_struct;
+mod main_attr;
 mod task;
 mod trace;
 
@@ -25,11 +26,35 @@ pub fn trace(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 /// Mark an async fn as the task entrypoint. The fn itself is unchanged; a
-/// sibling `fn {name}_entry() -> flyte::TaskEntry` is generated for use with
-/// `flyte::worker_main`.
+/// sibling `fn {name}_entry() -> flyte::TaskEntry` is generated, carrying the
+/// task's name, its interface (derived from the signature), and a runner that
+/// decodes `Inputs` and encodes `Outputs`.
 #[proc_macro_attribute]
 pub fn task(attr: TokenStream, item: TokenStream) -> TokenStream {
     task::expand(attr, item)
+}
+
+/// Make this task the binary's entrypoint: generates
+/// `fn main() -> ExitCode { flyte::worker_main({name}_entry()) }`.
+///
+/// ```ignore
+/// #[flyte::main]
+/// #[flyte::task]
+/// async fn my_task(x: i64) -> Result<i64, flyte::Error> { Ok(x * 2) }
+/// ```
+///
+/// Pair it with `#[flyte::task]`, which generates the `{name}_entry` fn the
+/// generated `main` calls — without it you get `cannot find function
+/// {name}_entry in this scope`. Attribute order does not matter, because this
+/// macro passes the fn through untouched and only adds `main` beside it.
+///
+/// The annotated fn must sit at the crate root of a **bin** target (a `main`
+/// generated inside a module or a lib target is not the process entrypoint), and
+/// only one task per binary can be the entrypoint — hence opt-in rather than
+/// part of `#[flyte::task]`.
+#[proc_macro_attribute]
+pub fn main(attr: TokenStream, item: TokenStream) -> TokenStream {
+    main_attr::expand(attr, item)
 }
 
 /// Derive `FlyteType` for a serde struct, transported as msgpack (wire

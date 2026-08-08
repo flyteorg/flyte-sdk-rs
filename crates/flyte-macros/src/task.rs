@@ -44,6 +44,30 @@ fn expand_inner(attr: TokenStream, func: syn::ItemFn) -> syn::Result<proc_macro2
     });
     let arg_idents: Vec<_> = params.iter().map(|(ident, _)| ident).collect();
 
+    // The interface the launcher sees, derived from this signature — the same
+    // `literal_type()` expressions `#[flyte::trace]` uses for its TypedInterface.
+    let iface_inputs = params.iter().map(|(ident, ty)| {
+        let name = ident.to_string();
+        quote! {
+            ::flyte::TaskVariable {
+                name: #name,
+                literal_type: <#ty as ::flyte::FlyteType>::literal_type(),
+                required: true,
+            }
+        }
+    });
+    let iface_outputs = if is_unit {
+        quote! { ::std::vec![] }
+    } else {
+        quote! {
+            ::std::vec![::flyte::TaskVariable {
+                name: "o0",
+                literal_type: <#ok_ty as ::flyte::FlyteType>::literal_type(),
+                required: true,
+            }]
+        }
+    };
+
     let run_and_encode = if is_unit {
         quote! {
             #fn_name(#(#arg_idents),*).await?;
@@ -65,6 +89,10 @@ fn expand_inner(attr: TokenStream, func: syn::ItemFn) -> syn::Result<proc_macro2
         #vis fn #entry_ident() -> ::flyte::TaskEntry {
             ::flyte::TaskEntry {
                 name: #fn_name_str,
+                interface: || ::flyte::TaskInterface {
+                    inputs: ::std::vec![#(#iface_inputs),*],
+                    outputs: #iface_outputs,
+                },
                 run: |__inputs: ::flyte::idl::Inputs| {
                     ::std::boxed::Box::pin(async move {
                         #(#decode_params)*
