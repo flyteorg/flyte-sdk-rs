@@ -7,12 +7,20 @@ section says otherwise, nothing here is implemented and nothing here has run aga
 
 # `flyte::condition` — wait for an external signal
 
-> **Implemented.** The SDK side is in `crates/flyte/src/condition.rs` with an example in
-> `examples/human-approval`, and the crate side is
-> [flyteorg/flyte-sdk#1401](https://github.com/flyteorg/flyte-sdk/pull/1401). Until that PR
-> merges, this needs the sibling `flyte-sdk` checkout on that branch. Not yet exercised against
-> a live cluster — the one thing left to verify is the round trip in the "Tests and example"
-> section below.
+> **Implemented and verified end to end.** The SDK side is in
+> `crates/flyte/src/condition.rs` with an example in `examples/human-approval`; the crate side is
+> [flyteorg/flyte-sdk#1401](https://github.com/flyteorg/flyte-sdk/pull/1401), which the sibling
+> `flyte-sdk` checkout needs until it merges.
+>
+> A live run on demo (`u7nhq4j7nkzxhdj8zgnc`) confirmed the whole path: both conditions
+> registered as `ACTION_PHASE_PAUSED` while the task waited, `flyte signal condition` resolved
+> them, and the task resumed and returned `deployed build-1234 (ticket REL-42)` — so a `bool` and
+> a `String` both crossed the wire on `ActionUpdate.value` and decoded back into Rust. The action
+> names were **predicted before the run** from the derivation below
+> (`5q13fagtajazm6z4vswz1scqe`, `3gc7mirvmupwhmaa3cpurc1q5`) and the backend produced exactly
+> those, so cross-SDK naming compatibility is observed rather than argued.
+>
+> The design rationale and wire details below are kept as the reference for this feature.
 
 A task pauses until something outside it provides a value: a human approving a deploy, an
 external system calling back. The Python SDK's primitive is

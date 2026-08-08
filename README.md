@@ -6,13 +6,15 @@
 # Flyte Rust SDK
 
 **Write [Flyte](https://github.com/flyteorg/flyte-sdk) tasks in Rust — traced,
-replayed on retry, and composable with Python workflows.**
+replayed on retry, pausable for human approval, and composable with Python
+workflows.**
 
 Mark steps of an async fn with `#[flyte::trace]`: each step is recorded as a
 child action on the Flyte backend (visible in the console) and **replayed
 instead of re-run when the task retries** — in-process checkpointing.
 Primitives and serde structs (msgpack, wire-compatible with Python dataclasses)
-pass between steps.
+pass between steps. And with `flyte::condition`, a task can **pause until a
+person answers**, then carry on with their answer.
 
 ```rust
 use serde::{Deserialize, Serialize};
@@ -39,8 +41,48 @@ async fn my_task(x: i64, label: String) -> Result<String, flyte::Error> {
 ```
 
 That is the whole program — no `fn main`, no worker plumbing. The full example
-lives in [`examples/hello-trace`](examples/hello-trace); see
-[`examples/`](examples) for concurrent traces and replay-on-retry.
+lives in [`examples/hello-trace`](examples/hello-trace).
+
+## Pause for a human
+
+`flyte::condition` parks the task until someone signals an answer. Creating a
+condition and waiting for it are separate steps, so a task can raise every
+question it needs up front — reviewers answer in parallel — and collect the
+answers when it is ready to proceed:
+
+```rust
+let security = flyte::condition::<bool>("security-review")
+    .prompt(format!("Approve **{artifact}** on security grounds?"))
+    .markdown()
+    .timeout(Duration::from_secs(24 * 60 * 60))
+    .create()          // the question exists and is answerable from here
+    .await?;
+
+let release = flyte::condition::<String>("release-ticket")
+    .prompt(format!("Release ticket for {artifact}?"))
+    .create()
+    .await?;
+
+// ... other work ...
+
+let (approved, ticket) = futures::try_join!(security.wait(), release.wait())?;
+```
+
+The value type is checked at compile time and only `bool`, `i64`, `i32`, `f64`,
+`f32` and `String` are allowed, because that is what the backend can validate a
+signal against. While the task waits, each condition shows in the console as a
+paused action; answer one with:
+
+```bash
+flyte get condition <run-name>                              # find the action name
+flyte signal condition <run-name> <action-name> true
+```
+
+A rejection or a timeout comes back as `Error::Condition`, carrying a
+`ConditionOutcome` you can match on. Full example:
+[`examples/human-approval`](examples/human-approval).
+
+See [`examples/`](examples) for concurrent traces and replay-on-retry too.
 
 ## Run locally
 
@@ -151,5 +193,7 @@ launcher, files/dataframes, and trace groups. Expect contract changes while
 experimental.
 
 `flyte::condition` needs [flyteorg/flyte-sdk#1401](https://github.com/flyteorg/flyte-sdk/pull/1401)
-in the sibling `flyte-sdk` checkout; see [docs/future.md](docs/future.md) for the
-design and what is still open.
+in the sibling `flyte-sdk` checkout until that merges. It has been run end to
+end against a live backend — task pauses, `flyte signal condition` resolves it,
+task resumes with the value. [docs/future.md](docs/future.md) records the design
+and what is still open.
