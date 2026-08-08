@@ -195,5 +195,4 @@ experimental.
 `flyte::condition` needs [flyteorg/flyte-sdk#1401](https://github.com/flyteorg/flyte-sdk/pull/1401)
 in the sibling `flyte-sdk` checkout until that merges. It has been run end to
 end against a live backend — task pauses, `flyte signal condition` resolves it,
-task resumes with the value. [docs/future.md](docs/future.md) records the design
-and what is still open.
+task resumes with the value.
