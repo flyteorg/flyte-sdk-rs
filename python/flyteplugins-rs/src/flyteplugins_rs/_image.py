@@ -70,14 +70,19 @@ def rust_worker_image(
             ]
         )
 
-    # Path-dependency shape: workspace manifests + crates + this example's crate.
-    rel = crate_dir.relative_to(workspace)
+    # Path-dependency shape: the whole workspace's Rust sources.
+    #
+    # Every workspace member must be present even when only one is being built --
+    # cargo loads all of them, and a missing member fails before compiling
+    # anything. So copy the member directories wholesale rather than just this
+    # crate's. Python is excluded by the dockerignore above, which is what keeps
+    # launcher edits from changing the image tag.
     image = image.with_source_file(workspace / "Cargo.toml", "./ws/Cargo.toml")
     if (workspace / "Cargo.lock").exists():
         image = image.with_source_file(workspace / "Cargo.lock", "./ws/Cargo.lock")
-    image = image.with_source_folder(workspace / "crates", "./ws/crates")
-    image = image.with_source_file(crate_dir / "Cargo.toml", f"./ws/{rel}/Cargo.toml")
-    image = image.with_source_folder(crate_dir / "src", f"./ws/{rel}/src")
+    for member_dir in ("crates", "examples"):
+        if (workspace / member_dir).is_dir():
+            image = image.with_source_folder(workspace / member_dir, f"./ws/{member_dir}")
     if rs_controller is not None:
         # Sibling of the workspace, matching ../../../flyte-sdk/rs_controller.
         image = image.with_source_folder(rs_controller, "./flyte-sdk/rs_controller")

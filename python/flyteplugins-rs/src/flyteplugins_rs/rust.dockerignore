@@ -8,6 +8,12 @@ target
 __pycache__
 **/__pycache__
 *.pyc
+**/*.pyc
+# The worker image builds Rust only; excluding Python keeps launcher edits from
+# invalidating the image tag. Both forms: a bare pattern matches only the context
+# root, as with `target` / `**/target` above.
+*.py
+**/*.py
 .venv
 **/.venv
 .flyte
