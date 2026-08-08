@@ -9,9 +9,7 @@ enqueues the action with an inline task spec, and reads back
 
 Run it:
 
-    uv run --project ../../../flyte-sdk flyte --config ~/.flyte/demo-config.yaml \
-        run --project flytesnacks --domain development \
-        workflow.py pipeline --x 21 --label demo
+    flyte run workflow.py pipeline --x 21 --label demo
 
 The console then shows the Python parent, the Rust task as its child action, and
 that child's own three `#[flyte::trace]` children.

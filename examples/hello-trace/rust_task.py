@@ -13,8 +13,7 @@ container the generated module (carried by the code bundle) stands in.
 
 Run it (--x / --label are derived from the interface):
 
-    uv run --project ../../../flyte-sdk flyte run \
-        --project <project> --domain <domain> rust_task.py my_task --x 21 --label demo
+    flyte run rust_task.py my_task --x 21 --label demo
 
 Caveat: `flyte run` always uploads a small Python code bundle this container
 never reads (the CLI has no --version flag and --copy-style none requires one).

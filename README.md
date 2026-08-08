@@ -63,12 +63,10 @@ cargo run -p hello-trace -- describe-interface   # see what it declares
 
 # 3. run it on the cluster (first run builds the image remotely, then cached)
 cd examples/hello-trace
-uv run --project ../../../flyte-sdk flyte run \
-    --project <project> --domain <domain> rust_task.py my_task --x 21 --label demo
+flyte run rust_task.py my_task --x 21 --label demo
 
 # 4. or call it from a Python workflow (Rust task as a child action)
-uv run --project ../../../flyte-sdk flyte run \
-    --project <project> --domain <domain> workflow.py pipeline --x 21 --label demo
+flyte run workflow.py pipeline --x 21 --label demo
 ```
 
 The console shows the run with one child trace action per `#[flyte::trace]`
@@ -105,21 +103,20 @@ cargo test -p hello-trace
 
 It fails loudly if attempt 1 replays anything or attempt 2 replays fewer than 3.
 
-### Against a hosted cluster (e.g. demo.hosted.unionai.cloud)
+### Against a hosted cluster
 
 ```bash
 # one-time: create client credentials (prints an export FLYTE_API_KEY=... line)
-cd ../flyte-sdk && uv run flyte --config ~/.flyte/demo-config.yaml \
-    create api-key --name rust-sdk-smoke
+flyte create api-key --name rust-sdk-smoke
 
 FLYTE_API_KEY="<that key>" ./scripts/smoke.sh
 # ...
 # replayed traces: 3 (expected 3)
-# SMOKE PASSED: mode=api-key run=rust-smoke-<ts> org=demo project=flytesnacks domain=development
+# SMOKE PASSED: mode=api-key run=rust-smoke-<ts>
 ```
 
-Defaults: `org=demo project=flytesnacks domain=development`; override with
-`SMOKE_ORG` / `SMOKE_PROJECT` / `SMOKE_DOMAIN`. Copy the API key carefully —
+Set `SMOKE_ORG` / `SMOKE_PROJECT` / `SMOKE_DOMAIN` for your cluster (see the
+script header for defaults). Copy the API key carefully —
 it is url-safe base64 and the CLI wraps it across lines.
 
 ### Against the local devbox
@@ -157,9 +154,7 @@ args/env.
 cargo build -p hello-trace     # once: the launcher reads the interface from the binary
 
 cd examples/hello-trace
-uv run --project ../../../flyte-sdk flyte run \
-    --project <project> --domain <domain> rust_task.py my_task --x 21 --label demo
-# url: https://<cluster>/v2/domain/<domain>/project/<project>/runs/<run-id>
+flyte run rust_task.py my_task --x 21 --label demo
 # o0: "demo: mean=21 over 2 values"
 ```
 

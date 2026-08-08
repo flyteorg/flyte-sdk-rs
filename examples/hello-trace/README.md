@@ -24,8 +24,7 @@ Traced steps just execute their bodies when no backend is attached.
 ```bash
 cargo build -p hello-trace         # once: rust_task.py reads the interface from the binary
 
-uv run --project ../../../flyte-sdk flyte run \
-    --project <project> --domain <domain> rust_task.py my_task --x 21 --label demo
+flyte run rust_task.py my_task --x 21 --label demo
 ```
 
 Nothing to configure: the worker image is declared as `flyte.Image` layers in
@@ -54,8 +53,7 @@ the generated module stands in.
 ## From a Python workflow
 
 ```bash
-uv run --project ../../../flyte-sdk flyte run \
-    --project <project> --domain <domain> workflow.py pipeline --x 21 --label demo
+flyte run workflow.py pipeline --x 21 --label demo
 ```
 
 The console shows the Python parent, the Rust task as its child action, and that
