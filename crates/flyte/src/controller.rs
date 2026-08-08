@@ -7,11 +7,11 @@
 
 use std::sync::Arc;
 
-use flyte_controller_base::action::Action;
+use flyte_controller_base::action::{Action, ActionType};
 use flyte_controller_base::core::CoreBaseController;
 
-use crate::error::Error;
-use crate::idl::{ActionIdentifier, ActionPhase, Message as _, RunIdentifier};
+use crate::error::{ConditionOutcome, Error};
+use crate::idl::{ActionIdentifier, ActionPhase, ConditionAction, Literal, Message as _, RunIdentifier};
 
 /// What the SDK needs to know about a previously recorded action.
 pub struct RecordedAction {
@@ -32,6 +32,17 @@ pub struct TraceRecord {
     pub end: f64,
     pub run_output_base: String,
     pub typed_interface_bytes: Vec<u8>,
+}
+
+/// Everything needed to register a condition as a child action.
+pub struct ConditionRecord {
+    pub parent_action_name: String,
+    pub action_name: String,
+    pub spec: ConditionAction,
+    /// Placeholder path: conditions have no inputs and nothing is written here,
+    /// but the enqueue path requires a non-empty value.
+    pub inputs_uri: String,
+    pub run_output_base: String,
 }
 
 pub struct Controller {
@@ -112,6 +123,74 @@ impl Controller {
             .await
             .map_err(|e| Error::Controller(format!("trace submit failed: {e:?}")))?;
         Ok(())
+    }
+
+    /// Register a condition as a child action. Returns as soon as it is
+    /// enqueued: the condition exists and is answerable from that point, and
+    /// [`Self::wait_condition`] collects the answer later.
+    pub async fn start_condition(&self, rec: ConditionRecord) -> Result<(), Error> {
+        let action_id_bytes = self.action_id(&rec.action_name).encode_to_vec();
+        let action = Action::from_condition(
+            rec.parent_action_name,
+            &action_id_bytes,
+            &rec.spec.encode_to_vec(),
+            rec.inputs_uri,
+            rec.run_output_base,
+            None, // group: not supported in v0
+        )
+        .map_err(|e| Error::Controller(format!("building condition action failed: {e}")))?;
+        self.inner
+            .start_action(action)
+            .await
+            .map_err(|e| Error::Controller(format!("condition submit failed: {e:?}")))
+    }
+
+    /// Wait for a condition registered by [`Self::start_condition`] to be
+    /// signalled, and return the value it carried.
+    ///
+    /// `Ok(None)` means it succeeded without a value, which the backend permits.
+    /// A terminal-but-unsuccessful phase becomes [`Error::Condition`] rather than
+    /// a controller error: it is a real answer, not a transport failure.
+    pub async fn wait_condition(
+        &self,
+        condition_name: &str,
+        parent_action_name: &str,
+        action_name: &str,
+    ) -> Result<Option<Literal>, Error> {
+        let action = self
+            .inner
+            .wait_for_action(
+                &self.run_id,
+                parent_action_name,
+                action_name,
+                ActionType::Condition,
+            )
+            .await
+            .map_err(|e| Error::Controller(format!("condition wait failed: {e:?}")))?;
+
+        // `Recovered` counts as success here: the condition was adopted from a
+        // prior run and its value is valid.
+        if action.is_action_successful() {
+            return Ok(action.condition_output);
+        }
+
+        let outcome = match action.phase {
+            Some(ActionPhase::TimedOut) => ConditionOutcome::TimedOut,
+            Some(ActionPhase::Aborted) => ConditionOutcome::Aborted,
+            Some(ActionPhase::Failed) => ConditionOutcome::Failed,
+            _ => ConditionOutcome::Unknown,
+        };
+        let message = action
+            .err
+            .as_ref()
+            .map(|e| e.message.clone())
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| format!("phase {:?}", action.phase));
+        Err(Error::Condition {
+            name: condition_name.to_string(),
+            outcome,
+            message,
+        })
     }
 
     pub async fn finalize(&self, parent_action_name: &str) {

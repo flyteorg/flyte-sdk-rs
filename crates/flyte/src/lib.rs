@@ -6,6 +6,7 @@
 //! replayed on retry. Without a backend traced fns just run their bodies, so
 //! [`run`] executes the whole task in-process for tests and dev loops.
 
+mod condition;
 pub mod context;
 #[doc(hidden)]
 pub mod controller;
@@ -23,7 +24,8 @@ pub mod trace;
 pub mod types;
 mod worker;
 
-pub use error::Error;
+pub use condition::{condition, Condition, ConditionBuilder, ConditionValue};
+pub use error::{ConditionOutcome, Error};
 pub use flyte_macros::{main, task, trace, FlyteStruct};
 pub use interface::{TaskInterface, TaskVariable};
 pub use types::FlyteType;

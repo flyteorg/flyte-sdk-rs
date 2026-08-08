@@ -179,6 +179,12 @@ fn build_controller(run_id: RunIdentifier) -> Result<Controller, Error> {
 fn error_document(err: &Error) -> ErrorDocument {
     let (code, origin) = match err {
         Error::User { code, .. } => (code.clone(), execution_error::ErrorKind::User),
+        // A rejected or timed-out condition is a user outcome, not a system
+        // fault: reporting it as a system error would give it the wrong retry
+        // semantics and disagree with the Python SDK's codes.
+        Error::Condition { outcome, .. } => {
+            (outcome.code().to_string(), execution_error::ErrorKind::User)
+        }
         _ => ("SystemError".to_string(), execution_error::ErrorKind::System),
     };
     ErrorDocument {

@@ -12,4 +12,8 @@ pub use flyteidl2::flyteidl::core::{
     Scalar, SimpleType, TypedInterface, Variable, VariableEntry, VariableMap,
 };
 pub use flyteidl2::flyteidl::task::{Inputs, NamedLiteral, Outputs};
+pub use flyteidl2::flyteidl::workflow::{
+    ConditionAction, ConditionPromptType, ConditionWebhook,
+};
+pub use flyteidl2::google::protobuf::Duration;
 pub use prost::Message;

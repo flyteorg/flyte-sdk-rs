@@ -139,11 +139,17 @@ cargo build && cargo test
 | [`hello-trace`](examples/hello-trace) | Sequential traced steps, structs, and the Python-workflow composition above. |
 | [`concurrent-traces`](examples/concurrent-traces) | Many traced steps at once, each recorded and replayed independently. |
 | [`retry-replay`](examples/retry-replay) | An expensive step replayed instead of re-run after a failure. |
+| [`human-approval`](examples/human-approval) | Pausing for a human decision with `flyte::condition`. |
 
 ## Status
 
 v0 supports single-node traces: `#[flyte::task]`, `#[flyte::trace]` with
-record/replay, `#[derive(FlyteStruct)]`, and primitives. Not yet: task fan-out
+record/replay, `#[derive(FlyteStruct)]`, and primitives — plus `flyte::condition`
+for pausing on an external signal such as a human approval. Not yet: task fan-out
 from Rust (a Python parent calling a Rust task works today), a native Rust
 launcher, files/dataframes, and trace groups. Expect contract changes while
 experimental.
+
+`flyte::condition` needs [flyteorg/flyte-sdk#1401](https://github.com/flyteorg/flyte-sdk/pull/1401)
+in the sibling `flyte-sdk` checkout; see [docs/future.md](docs/future.md) for the
+design and what is still open.

@@ -7,6 +7,13 @@ section says otherwise, nothing here is implemented and nothing here has run aga
 
 # `flyte::condition` — wait for an external signal
 
+> **Implemented.** The SDK side is in `crates/flyte/src/condition.rs` with an example in
+> `examples/human-approval`, and the crate side is
+> [flyteorg/flyte-sdk#1401](https://github.com/flyteorg/flyte-sdk/pull/1401). Until that PR
+> merges, this needs the sibling `flyte-sdk` checkout on that branch. Not yet exercised against
+> a live cluster — the one thing left to verify is the round trip in the "Tests and example"
+> section below.
+
 A task pauses until something outside it provides a value: a human approving a deploy, an
 external system calling back. The Python SDK's primitive is
 `flyte.new_condition(name, ...)` + `condition.wait()`; the CLI calls the same thing a *signal*.

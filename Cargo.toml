@@ -6,6 +6,7 @@ members = [
     "examples/hello-trace",
     "examples/concurrent-traces",
     "examples/retry-replay",
+    "examples/human-approval",
 ]
 
 [workspace.package]

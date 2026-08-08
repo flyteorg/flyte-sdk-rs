@@ -8,6 +8,7 @@ the container) plus a small `task.py` that declares it to Flyte.
 | [`hello-trace`](hello-trace) | The basics: sequential traced steps, structs between them, and calling the task from a Python workflow ([`workflow.py`](hello-trace/workflow.py)). |
 | [`concurrent-traces`](concurrent-traces) | Many traced steps in flight at once — `try_join_all` over traced fns, each recorded and replayed independently. |
 | [`retry-replay`](retry-replay) | Why traces exist: an expensive step is recorded, the task fails, and the retry **replays** the step instead of re-running it. |
+| [`human-approval`](human-approval) | Pausing for a person: two approvals are raised up front with `flyte::condition`, then collected. Needs a backend, and someone to answer. |
 
 ## Running any of them
 
