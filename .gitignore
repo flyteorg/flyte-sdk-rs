@@ -1,3 +1,6 @@
 /target
 **/*.rs.bk
 .DS_Store
+__pycache__/
+*.pyc
+.flyte/

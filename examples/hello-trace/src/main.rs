@@ -1,8 +1,15 @@
-//! Example single-node traced task.
+//! A Flyte task written in Rust.
 //!
-//! Local dev loop:      `cargo run -p hello-trace -- local`
-//! In a task container: the binary is the container command; the backend passes
-//! the standard `a0 --inputs ... --outputs-path ...` args and env.
+//! `#[flyte::trace]` steps run in-process, are recorded as child trace actions,
+//! and are replayed instead of re-run when the task is retried.
+//! `#[flyte::main]` makes this crate the task container's entrypoint.
+//!
+//! - dev loop:      `cargo test -p hello-trace`  (runs the task in-process)
+//! - its interface: `cargo run -p hello-trace -- describe-interface`
+//! - launch it:     see `rust_task.py` / `workflow.py` next door
+//!
+//! In a task container the backend supplies `a0 --inputs <uri> --outputs-path
+//! <uri>` plus the run env; nothing here has to know about that.
 
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +42,7 @@ async fn describe(stats: Stats) -> Result<String, flyte::Error> {
     ))
 }
 
+#[flyte::main]
 #[flyte::task]
 async fn my_task(x: i64, label: String) -> Result<String, flyte::Error> {
     let doubled = double(x).await?;
@@ -42,37 +50,22 @@ async fn my_task(x: i64, label: String) -> Result<String, flyte::Error> {
     describe(stats).await
 }
 
-fn main() -> std::process::ExitCode {
-    let args: Vec<String> = std::env::args().collect();
-    match args.get(1).map(String::as_str) {
-        Some("local") => {
-            let out = flyte::run_local(my_task(21, "demo".to_string()));
-            println!("local result: {out:?}");
-            std::process::ExitCode::SUCCESS
-        }
-        // Smoke-test helpers: write an inputs.pb for this task / decode an outputs.pb.
-        Some("write-inputs") => {
-            use flyte::idl::Message as _;
-            use flyte::FlyteType as _;
-            let path = args.get(2).expect("usage: write-inputs <path>");
-            let inputs = flyte::types::build_inputs(vec![
-                ("x", 21i64.to_literal().unwrap()),
-                ("label", "demo".to_string().to_literal().unwrap()),
-            ]);
-            std::fs::write(path, inputs.encode_to_vec()).expect("write inputs.pb");
-            println!("wrote {path}");
-            std::process::ExitCode::SUCCESS
-        }
-        Some("read-outputs") => {
-            use flyte::idl::Message as _;
-            use flyte::FlyteType as _;
-            let path = args.get(2).expect("usage: read-outputs <path>");
-            let data = std::fs::read(path).expect("read outputs.pb");
-            let outputs = flyte::idl::Outputs::decode(data.as_slice()).expect("decode outputs.pb");
-            let lit = flyte::types::output_literal(&outputs, "o0").expect("output o0");
-            println!("o0 = {:?}", String::from_literal(lit).expect("decode o0"));
-            std::process::ExitCode::SUCCESS
-        }
-        _ => flyte::worker_main(my_task_entry()),
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runs_in_process_without_a_backend() {
+        let out = flyte::run(my_task(21, "demo".to_string())).unwrap();
+        assert_eq!(out, "demo: mean=21 over 2 values");
+    }
+
+    #[test]
+    fn interface_is_derived_from_the_signature() {
+        let entry = my_task_entry();
+        assert_eq!(
+            (entry.interface)().to_json(entry.name),
+            r#"{"flyte_interface_version":1,"task":"my_task","inputs":[{"name":"x","type":"integer","required":true},{"name":"label","type":"string","required":true}],"outputs":[{"name":"o0","type":"string"}]}"#
+        );
     }
 }

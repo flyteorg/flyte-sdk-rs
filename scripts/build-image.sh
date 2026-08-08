@@ -17,7 +17,7 @@ CTX="$(mktemp -d /tmp/flyte-sdk-rs-ctx.XXXXXX)"
 trap 'rm -rf "$CTX"' EXIT
 mkdir -p "$CTX/flyte-sdk" "$CTX/flyte-sdk-rust"
 rsync -a --exclude target --exclude .git "$FLYTE_SDK_DIR/rs_controller" "$CTX/flyte-sdk/"
-rsync -a --exclude target --exclude .git "$REPO_DIR/" "$CTX/flyte-sdk-rust/"
+rsync -a --exclude target --exclude .git --exclude __pycache__ "$REPO_DIR/" "$CTX/flyte-sdk-rust/"
 
 PUSH_FLAG="--load"
 [ "${1:-}" = "--push" ] && PUSH_FLAG="--push"

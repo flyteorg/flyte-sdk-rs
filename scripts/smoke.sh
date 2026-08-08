@@ -35,8 +35,13 @@ mkdir -p "$BASE"
 
 cargo build -p hello-trace
 BIN=target/debug/hello-trace
+FIXTURE=target/debug/smoke_fixture
 
-"$BIN" write-inputs "$BASE/inputs.pb"
+# Echo the interface the worker declares: the contract the launcher reads.
+echo "=== interface ==="
+"$BIN" describe-interface
+
+"$FIXTURE" write-inputs "$BASE/inputs.pb"
 
 run_worker() {
   local attempt="$1"
@@ -71,5 +76,5 @@ echo "replayed traces: $REPLAYS (expected 3)"
 [ "$REPLAYS" -eq 3 ] || { echo "FAIL: expected 3 replayed traces"; exit 1; }
 
 echo "=== outputs ==="
-"$BIN" read-outputs "$BASE/a0/outputs.pb"
+"$FIXTURE" read-outputs "$BASE/a0/outputs.pb"
 echo "SMOKE PASSED: mode=$MODE run=$RUN_NAME org=$ORG project=$PROJECT domain=$DOMAIN"
