@@ -61,6 +61,47 @@ fn task_entry_decodes_inputs_and_encodes_outputs() {
     assert!(!outputs.encode_to_vec().is_empty());
 }
 
+/// Concurrent traces with distinct inputs must be named identically no matter
+/// what order the calls arrive in — that is what lets a fan-out replay on retry.
+#[test]
+fn distinct_inputs_name_traces_independently_of_call_order() {
+    let names = |arrival: [&str; 3]| {
+        let seq = flyte::context::Sequencer::default();
+        arrival.map(|inputs_hash| {
+            let n = seq.next(&format!("step:{inputs_hash}"));
+            (
+                inputs_hash.to_string(),
+                flyte::hash::sub_action_name("a0", inputs_hash, "step", n),
+            )
+        })
+    };
+
+    let mut forward = names(["h1", "h2", "h3"]);
+    let mut reverse = names(["h3", "h2", "h1"]);
+    forward.sort();
+    reverse.sort();
+    assert_eq!(forward, reverse);
+
+    // And every one of them is the first call for its own inputs.
+    let seq = flyte::context::Sequencer::default();
+    for (inputs_hash, name) in &forward {
+        assert_eq!(
+            *name,
+            flyte::hash::sub_action_name("a0", inputs_hash, "step", seq.next(&format!("step:{inputs_hash}"))),
+        );
+    }
+}
+
+/// Repeated identical calls are distinct steps, not one memoized action.
+#[test]
+fn identical_inputs_share_a_counter() {
+    let seq = flyte::context::Sequencer::default();
+    assert_eq!(seq.next("step:h1"), 1);
+    assert_eq!(seq.next("step:h1"), 2);
+    // Distinct inputs restart at 1, which is why order cannot matter for them.
+    assert_eq!(seq.next("step:h2"), 1);
+}
+
 #[test]
 fn task_entry_exposes_declared_interface() {
     let iface = (pipeline_entry().interface)();

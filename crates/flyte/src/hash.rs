@@ -58,6 +58,12 @@ pub fn base36_encode(digest: [u8; 16]) -> String {
 /// Deterministic sub-action name — Python's `ActionID.new_sub_action_from`.
 /// All components must be stable across attempts: recovery matches previously
 /// recorded actions by this name.
+///
+/// `seq` is what keeps repeated *identical* calls distinct, so N calls to a step
+/// are N steps rather than one memoized action (see [`crate::context::Sequencer`]
+/// for the ordering guarantees). It is also part of Python's component string, so
+/// dropping it here would diverge from the names Python generates — the golden
+/// test `sub_action_name_matches_python` pins that.
 pub fn sub_action_name(parent: &str, input_hash: &str, identity: &str, seq: u32) -> String {
     let components = format!("{parent}-{input_hash}-{identity}-{seq}");
     let digest: [u8; 16] = Md5::digest(components.as_bytes()).into();

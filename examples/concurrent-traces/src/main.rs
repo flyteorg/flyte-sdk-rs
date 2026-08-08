@@ -4,11 +4,17 @@
 //! `try_join_all` below puts one trace action per value in flight
 //! simultaneously, and each is recorded (and replayed on retry) independently.
 //!
-//! Determinism note: a trace's action name is derived from its identity plus its
-//! *inputs*, so concurrent calls with distinct inputs get stable names no matter
-//! what order they finish in — that is what makes replay work here. Firing many
-//! concurrent calls with *identical* inputs is the one case where names depend on
-//! completion order; give each call distinct inputs (as `1..=n` does).
+//! Why concurrency is safe here: a trace's action name derives from the parent
+//! action, the step's identity, its *inputs*, and a call counter kept per
+//! (identity, inputs). Calls with distinct inputs therefore get their own
+//! counter, and each name is a pure function of the call — independent of which
+//! future happens to finish first. Concurrent calls with *identical* inputs do
+//! share a counter, so they draw their names in arrival order, but such calls are
+//! byte-identical and interchangeable: it makes no difference which one replays
+//! which recording.
+//!
+//! Both cases rest on the same contract replay assumes anyway — a traced step is
+//! a function of its inputs.
 //!
 //! - dev loop:      `cargo test -p concurrent-traces`
 //! - its interface: `cargo run -p concurrent-traces -- describe-interface`

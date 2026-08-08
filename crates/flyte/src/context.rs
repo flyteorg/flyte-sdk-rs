@@ -22,8 +22,22 @@ pub struct RuntimeState {
     sequencer: Sequencer,
 }
 
-/// Deterministic per-key call counter (Python's TaskCallSequencer): asyncio-/
-/// spawn-order independent because the key includes identity and inputs hash.
+/// Deterministic per-key call counter (Python's TaskCallSequencer).
+///
+/// The key combines a step's identity with its inputs hash, which is what makes
+/// trace names independent of scheduling order:
+///
+/// - **Calls with distinct inputs never share a counter.** Each gets its own
+///   sequence starting at 1, so its action name is a pure function of (parent,
+///   identity, inputs) — concurrent calls are named the same however they
+///   interleave, and replay on a later attempt finds them.
+/// - **Calls that do share a counter are byte-identical**, so they draw their
+///   sequence numbers in arrival order but are interchangeable: which recording
+///   each one replays is immaterial.
+///
+/// The one consequence worth knowing: if the *number* of identical calls differs
+/// between attempts, the surplus calls find no recording and simply re-run. That
+/// is a missed replay, never a wrong result.
 #[derive(Default)]
 pub struct Sequencer(Mutex<HashMap<String, u32>>);
 
