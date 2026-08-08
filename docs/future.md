@@ -1,7 +1,7 @@
 # Designed, not yet built
 
-Things this SDK is expected to grow, written down with enough detail to be picked up. Nothing
-here is implemented; nothing here has run against a cluster.
+Things this SDK is expected to grow, written down with enough detail to be picked up. Unless a
+section says otherwise, nothing here is implemented and nothing here has run against a cluster.
 
 ---
 
@@ -37,50 +37,72 @@ depends on:
 
 No proto regeneration and no backend work are required.
 
-Two properties of the existing code make the SDK side small:
+One property of the existing code makes the SDK side smaller than it looks:
 
-- **`submit_action` is already the wait.** `CoreBaseController::submit_action` enqueues and then
-  blocks until it sees a terminal `ActionUpdate`, and `Paused` is correctly *not* terminal
-  (`rs_controller/src/action.rs:139`). That is precisely a condition's lifecycle, so
-  `submit_action` needs no change.
-- **Action naming is already compatible.** Python derives a condition's action name with the
-  same `md5(parent-input_hash-identity-seq) → base36` scheme this SDK implements, passing the
-  condition's *name* as both `input_hash` and `identity`
-  (`flyte-sdk/src/flyte/_internal/controllers/remote/_controller.py:705-708`). So
-  `crates/flyte/src/hash.rs::sub_action_name` and `crates/flyte/src/context.rs::Sequencer` are
-  reusable verbatim.
+**Action naming is already compatible.** Python derives a condition's action name with the same
+`md5(parent-input_hash-identity-seq) → base36` scheme this SDK implements, passing the
+condition's *name* as both `input_hash` and `identity`
+(`flyte-sdk/src/flyte/_internal/controllers/remote/_controller.py:705-708`). So
+`crates/flyte/src/hash.rs::sub_action_name` and `crates/flyte/src/context.rs::Sequencer` are
+reusable verbatim, and the names a Rust task produces match the ones Python would.
+
+`Paused` is also correctly excluded from `is_action_terminal`, so a waiter keeps waiting through
+it without any special casing.
 
 ## Proposed API
 
-A builder, with the value type inferred from the binding rather than passed as an argument the
-way Python's `data_type` is:
+**Creating a condition and waiting for it are separate steps**, as they are in Python. That is
+deliberate and load-bearing: creating it is what makes the condition exist — it appears in the
+console for a human to answer, and its webhook fires — so a task can raise several questions up
+front, get on with other work, and collect the answers later. Collapsing the two into one call
+would mean nothing is ever visible until the task is already blocked on it.
 
 ```rust
-let approved: bool = flyte::condition("approve-deploy")
+// Ask now: the condition action is created here and is immediately visible.
+let approval = flyte::condition("approve-deploy")
     .prompt("Ship build 1234 to production?")
     .markdown()
     .description("Requires a release manager")
     .timeout(Duration::from_secs(3600))
-    .wait()
+    .create()
     .await?;
+
+// ... do other work, or hand `approval` to whatever owns the decision ...
+
+// Collect the answer, here or somewhere else entirely.
+let approved: bool = approval.wait().await?;
 ```
 
 ```rust
-pub fn condition(name: impl Into<String>) -> ConditionBuilder;
+pub fn condition<T: ConditionValue>(name: impl Into<String>) -> ConditionBuilder<T>;
 
-impl ConditionBuilder {
+impl<T: ConditionValue> ConditionBuilder<T> {
     pub fn prompt(self, prompt: impl Into<String>) -> Self;
     pub fn markdown(self) -> Self;                       // prompt_type = Markdown
     pub fn description(self, description: impl Into<String>) -> Self;
     pub fn timeout(self, timeout: Duration) -> Self;
     pub fn webhook(self, url: impl Into<String>) -> Self;
-    pub async fn wait<T: ConditionValue>(self) -> Result<T, Error>;
+    /// Register the condition. It exists, and is answerable, from here on.
+    pub async fn create(self) -> Result<Condition<T>, Error>;
+}
+
+pub struct Condition<T: ConditionValue> { /* action name + declared type */ }
+
+impl<T: ConditionValue> Condition<T> {
+    /// Block until it is signalled (or fails, times out, or is aborted).
+    pub async fn wait(&self) -> Result<T, Error>;
+    /// The action name, which is what `flyte signal condition` takes.
+    pub fn action_name(&self) -> &str;
 }
 ```
 
-Type inference comes from the binding, so the common case needs no annotation beyond the `let`.
-Turbofish (`.wait::<bool>()`) is only needed where the type is otherwise unconstrained — e.g.
-`if flyte::condition("ok").wait::<bool>().await? { .. }`.
+The value type is pinned at `create()` rather than at `wait()`, because the declared
+`LiteralType` is part of the registration payload — the backend needs it to validate a signal,
+and the CLI needs it to format one. Inference still works from a later `wait()` binding
+(`let ok: bool = approval.wait().await?`), so the turbofish is usually unnecessary.
+
+Because `Condition<T>` is a plain handle, the two halves can live far apart: pass it between
+functions, park several in a `Vec`, or `futures::try_join_all` over their `wait()`s.
 
 ### Only four types, enforced at compile time
 
@@ -118,32 +140,40 @@ Open question: whether to mark `Error` `#[non_exhaustive]` at the same time. Add
 a breaking change for anyone matching exhaustively; doing it now, while the SDK is experimental,
 is cheaper than later.
 
-### Laziness and cancellation
+### Lifecycle and cancellation
 
-- **Rust futures are lazy**, so `flyte::condition(..)` alone registers nothing — `.wait()` is
-  what enqueues the action. This avoids a Python footgun where registering and never awaiting
-  leaves a `PAUSED` action behind forever.
-- **Dropping the future mid-wait leaves a `PAUSED` action.** A `tokio::select!` loser abandons
-  the wait locally, and the SDK **cannot** abort the action: `cancel_action`
-  (`rs_controller/src/core.rs:574`) only marks the local cache and fires a local completion
-  event — it never calls `ActionsService/Abort`. Until that gap is closed, a server-side
-  `.timeout(..)` is the only thing that reaps an abandoned condition. Always set one when
-  racing a condition against anything else.
+- **`create()` enqueues; `wait()` only waits.** The condition exists from `create()` onward,
+  independently of whether anyone is waiting yet. This is what the decoupling buys, and it is
+  why `create()` is `async` while the builder before it is not.
+- **A created-but-never-awaited condition stays `PAUSED`.** That is inherent to the decoupling
+  (Python has the same property) and is the reason `.timeout(..)` matters: it is the only thing
+  that reaps one, since the SDK cannot abort a server-side action — `cancel_action`
+  (`rs_controller/src/core.rs:574`) only marks the local cache and never calls
+  `ActionsService/Abort`.
+- **Waiting is resumable, and safe to abandon.** The completion channel is registered at
+  `create()` and parked by action name, so a signal that lands before anyone calls `wait()` is
+  not lost — the later `wait()` returns immediately. A dropped `wait()` (a `tokio::select!`
+  loser) leaves the condition `PAUSED` rather than corrupting anything, and a retry of the task
+  re-derives the same action name and picks up the already-signalled value.
 
 ### Composition
 
 ```rust
-// Race an approval against a deadline. Note the .timeout() as well — see above.
-tokio::select! {
-    approved = flyte::condition("approve").timeout(Duration::from_secs(600)).wait() => approved?,
-    _ = tokio::time::sleep(Duration::from_secs(300)) => false,   // leaves the condition PAUSED
-}
+// Ask both questions up front so reviewers can answer in parallel, then collect.
+let security = flyte::condition::<bool>("security-review").create().await?;
+let legal = flyte::condition::<bool>("legal-review").create().await?;
+let (ok_security, ok_legal) = futures::try_join!(security.wait(), legal.wait())?;
 
-// Several independent approvals at once.
-let (security, legal) = futures::try_join!(
-    flyte::condition("security-review").wait::<bool>(),
-    flyte::condition("legal-review").wait::<bool>(),
-)?;
+// Race an approval against a deadline. Set .timeout() too: abandoning the wait
+// does not reap the condition, only the server-side timeout does.
+let approval = flyte::condition::<bool>("approve")
+    .timeout(Duration::from_secs(600))
+    .create()
+    .await?;
+tokio::select! {
+    approved = approval.wait() => approved?,
+    _ = tokio::time::sleep(Duration::from_secs(300)) => false,
+}
 ```
 
 The naming rule mirrors traces — distinct names get distinct counters, so names (and therefore
@@ -178,33 +208,37 @@ The non-obvious part. All verified against the Python SDK and the backend.
 | local `phase` | `Unspecified` — **not** `Succeeded`. Traces set a terminal phase because they are *recorded* after the fact; a condition is *launched* and resolved by the server. |
 | `realized_outputs_uri` | never set — the value arrives inline on `ActionUpdate.value`. |
 | parent | the **task** action, not an enclosing trace. In this SDK that is automatic: `RuntimeState::action_name` is the task action. |
-| `ACTION_PHASE_RECOVERED` | success-equivalent. Map phases with an explicit `_ =>` catch-all, never `Some(Succeeded)` alone. |
+| `ACTION_PHASE_RECOVERED` | success-equivalent — the action was adopted from a prior run and did not execute here, but its value is valid. Use `Action::is_action_successful()` rather than testing `phase == Succeeded` or inverting `Failed`. |
 
-### What has to change in `rs_controller`
+### The `rs_controller` side is done
 
-This is the blocker, and it lives in a **different repository** (`../flyte-sdk`). All six edits
-are additive; none alters existing task or trace behavior.
+Shipped in **[flyteorg/flyte-sdk#1401](https://github.com/flyteorg/flyte-sdk/pull/1401)**, so
+this is no longer a blocker — what remains is the SDK-side code below. All of it is additive;
+task and trace behavior is unchanged.
 
-1. `src/action.rs:15` — add `ActionType::Condition = 2` (currently `Task | Trace` only).
-2. `src/action.rs:22` — add `condition: Option<ConditionAction>` and
-   `condition_output: Option<core::Literal>` to `Action`; add an `Action::from_condition(..)`
-   constructor.
-3. `src/action.rs:100` `merge_update` — propagate `obj.value` into `condition_output`. This is
-   the one line that currently discards the signalled payload: the method reads `obj.phase`,
-   `obj.error`, and `obj.output_uri`, but never `obj.value`.
-   Do it **un-gated**, unlike Python, which gates on `self.type == "condition"`. An entry
-   created by `new_from_update` has `action_type: Task` and nothing later repairs it, so a
-   gated read would silently drop the value of an already-signalled condition on retry.
-4. `src/action.rs:115` `new_from_update` — same propagation, and stop hardcoding
-   `action_type: ActionType::Task`.
-5. `src/core.rs:686` and `:708` — `Condition` arms in `build_queue_spec` / `build_actions_spec`.
-   Both proto oneofs already have the variant.
-6. `src/core.rs:796` `launch_task` — `ActionType::Condition => action.condition.is_some()` in
-   the spec-presence check.
+- `ActionType::Condition`, plus `Action.condition` and `Action.condition_output`, and
+  `Action::from_condition` (phase `Unspecified`, no outputs URI, `started = false`).
+- `merge_update` and `new_from_update` now capture `ActionUpdate.value`. Un-gated on action
+  type, because an entry created from a watch update is typed `Task` until a later submit
+  repairs it — gating would drop the value of an already-signalled condition on a retry.
+- `merge_from_submit` adopts `action_type` and the type-specific spec, so a condition whose
+  update arrived before its submit is still recognised as one and gets enqueued.
+- `Condition` arms in `build_actions_spec` and `launch_task`; the legacy `QueueService` arm
+  errors clearly, since the backend has no condition support there.
+- **`submit_action` split into `start_action` + `wait_for_action`** — this is what makes the
+  decoupled `create()` / `wait()` above possible. Completion receivers are now parked by action
+  name in the informer, so a wait can be claimed by a caller that did not submit the action;
+  previously the receiver lived only on `submit_action`'s stack. `submit_action` is now their
+  composition and behaves identically for tasks and traces.
+- The trace wait bound became an explicit `match` over action type, so a future type must choose
+  its policy. Conditions take the unbounded wait deliberately — they are bounded server-side by
+  `ConditionAction.timeout`, which arrives as a `TIMED_OUT` update.
+- `Action::is_action_successful()` treats **`Recovered`** as success-equivalent, and
+  `is_action_paused()` names the condition wait. Both are exposed to Python
+  (`is_successful` / `is_paused`), with `condition_output_bytes` for the value.
 
-Explicitly **not** required: any change to `submit_action`, any header work, and any new RPC
-wrapper — a `signal` wrapper would only be needed to *send* signals, which is out of scope
-below.
+Still absent there, and worth knowing: `cancel_action` never calls `ActionsService/Abort`, so
+an abandoned condition can only be reaped by its server-side timeout.
 
 ### Where the SDK code would go
 
