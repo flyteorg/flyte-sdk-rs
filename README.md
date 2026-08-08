@@ -39,7 +39,8 @@ async fn my_task(x: i64, label: String) -> Result<String, flyte::Error> {
 ```
 
 That is the whole program — no `fn main`, no worker plumbing. The full example
-lives in [`examples/hello-trace`](examples/hello-trace).
+lives in [`examples/hello-trace`](examples/hello-trace); see
+[`examples/`](examples) for concurrent traces and replay-on-retry.
 
 ## Run locally
 
@@ -71,10 +72,10 @@ cargo run -p hello-trace -- describe-interface
 #  "outputs":[{"name":"o0","type":"string"}]}
 ```
 
-`rust_task.py` reads exactly that to register the task, and Flyte's remote
-image builder builds the worker image on the first run (no Dockerfile, no
-docker on your machine, cached afterwards). Make sure your config uses the
-remote builder:
+`task.py` reads exactly that to register the task — a few lines via
+[`flyteplugins-rs`](python/flyteplugins-rs) — and Flyte's remote image builder
+builds the worker image on the first run (no Dockerfile, no docker on your
+machine, cached afterwards). Make sure your config uses the remote builder:
 
 ```yaml
 # ~/.flyte/config.yaml
@@ -86,7 +87,7 @@ image:
 
 ```bash
 cd examples/hello-trace
-flyte run rust_task.py my_task --x 21 --label demo
+flyte run task.py my_task --x 21 --label demo
 # o0: "demo: mean=21 over 2 values"
 ```
 
@@ -99,7 +100,7 @@ A Python task can call the Rust task as a child action — no Rust-side changes:
 
 ```python
 import flyte
-from rust_task import my_task, rust_env
+from task import my_task, rust_env
 
 env = flyte.TaskEnvironment(name="hello_trace_py", depends_on=[rust_env])
 
@@ -130,6 +131,14 @@ path dependency on its `rs_controller` crate):
 ```bash
 cargo build && cargo test
 ```
+
+## Examples
+
+| Example | Shows |
+|---|---|
+| [`hello-trace`](examples/hello-trace) | Sequential traced steps, structs, and the Python-workflow composition above. |
+| [`concurrent-traces`](examples/concurrent-traces) | Many traced steps at once, each recorded and replayed independently. |
+| [`retry-replay`](examples/retry-replay) | An expensive step replayed instead of re-run after a failure. |
 
 ## Status
 

@@ -1,0 +1,112 @@
+"""The Flyte task that launches a Rust worker binary."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import flyte
+from flyte.extend import TaskTemplate
+from flyte.models import SerializationContext
+
+from ._descriptor import load_descriptor, native_interface
+from ._image import rust_worker_image
+
+# Not "python" (nothing python runs here) and never "raw-container" (that one
+# injects the copilot data sidecar). The leaseworker resolves an unregistered
+# type to the default pod plugin, which is the plain container handling we want.
+RUST_TASK_TYPE = "rust-task"
+
+
+@dataclass(kw_only=True)
+class RustWorkerTask(TaskTemplate):
+    """A container task whose image entrypoint is a compiled Rust worker."""
+
+    binary: str = "worker"
+
+    async def execute(self, *args, **kwargs):
+        # Only reached under mode="local" / `flyte run --local`, which would mean
+        # running the container ourselves (see flyte.extras.ContainerTask).
+        raise NotImplementedError("remote-only task; --local is not supported")
+
+    def container_args(self, sctx: SerializationContext) -> list[str]:
+        # Mirrors flyte._task.AsyncFunctionTaskTemplate.container_args, trimmed to
+        # what the Rust worker's arg parser consumes.
+        #
+        # - args[0] is the binary: images built from image layers have no
+        #   ENTRYPOINT (the image IDL has no such layer) and the container
+        #   command is empty, so k8s execs args directly. Under an image that
+        #   does set an ENTRYPOINT this token is just an unrecognized arg the
+        #   worker skips — one arg list, valid either way.
+        # - "a0" is the leading token the Python runtime also emits; the worker
+        #   skips it (it names a click subcommand there, nothing here).
+        # - input/output paths keep their {{.input}} / {{.outputPrefix}}
+        #   defaults, which the backend substitutes per action. This is also what
+        #   lets the task run as a CHILD action: the controller deliberately
+        #   leaves them unset for the node executor to fill in.
+        # - {{.runName}} / {{.actionName}} are NOT in the backend's substitution
+        #   set. The worker discards any "{{...}}" value and takes those names
+        #   from the RUN_NAME / ACTION_NAME env the backend injects; they stay as
+        #   forward-compatible placeholders.
+        # - --run-base-dir is never an arg; it arrives only as _U_RUN_BASE.
+        return [
+            f"/usr/local/bin/{self.binary}",
+            "a0",
+            "--inputs",
+            sctx.input_path,
+            "--outputs-path",
+            sctx.output_path,
+            "--run-name",
+            "{{.runName}}",
+            "--name",
+            "{{.actionName}}",
+        ]
+
+
+def rust_task(
+    *,
+    crate_dir: Path,
+    binary: str,
+    fallback_descriptor: dict[str, Any],
+    workspace: Path | None = None,
+    rs_controller: Path | None = None,
+    env_name: str | None = None,
+    image: flyte.Image | None = None,
+    **task_kwargs: Any,
+) -> tuple[RustWorkerTask, flyte.TaskEnvironment]:
+    """Declare a Rust worker as a Flyte task, plus the environment holding it.
+
+    The task's name and interface come from the binary's own descriptor, so the
+    Rust signature is the only place they are written down.
+
+    Extra keyword arguments (``retries``, ``cache``, ``resources``, ``timeout``,
+    ...) pass straight through to the underlying task template.
+
+    Returns ``(task, env)``. The env matters for composition: a Python parent
+    calling this task needs ``depends_on=[env]`` so the worker image is carried
+    into the deployment plan.
+    """
+    descriptor = load_descriptor(
+        crate_dir=crate_dir,
+        workspace=workspace or crate_dir,
+        binary=binary,
+        fallback=fallback_descriptor,
+    )
+
+    task = RustWorkerTask(
+        name=descriptor["task"],
+        binary=binary,
+        task_type=RUST_TASK_TYPE,
+        image=image
+        or rust_worker_image(
+            crate_dir=crate_dir,
+            binary=binary,
+            workspace=workspace,
+            rs_controller=rs_controller,
+        ),
+        interface=native_interface(descriptor),
+        **task_kwargs,
+    )
+    env = flyte.TaskEnvironment.from_task(env_name or f"{binary.replace('-', '_')}_env", task)
+    return task, env

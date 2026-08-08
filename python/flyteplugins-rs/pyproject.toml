@@ -1,0 +1,18 @@
+[project]
+name = "flyteplugins-rs"
+version = "0.1.0"
+description = "Launch Rust Flyte tasks from Python"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = ["flyte>=2.0.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/flyteplugins_rs"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/flyteplugins_rs/rust.dockerignore" = "flyteplugins_rs/rust.dockerignore"

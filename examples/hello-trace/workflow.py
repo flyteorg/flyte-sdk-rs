@@ -1,15 +1,10 @@
-"""Optional: use the Rust task from inside a Python workflow.
-
-The Rust task becomes a child action of a Python parent — and this needs **zero
-changes on the Rust side**. Calling `await my_task(...)` goes through
-TaskTemplate.__call__ -> the controller, which writes the child's inputs.pb,
-enqueues the action with an inline task spec, and reads back
-`<outputPrefix>/outputs.pb` keyed `o0`. That is exactly what
-`flyte::worker_main` already writes; nothing on that path needs a Python `func`.
-
-Run it:
+"""Call the Rust task from a Python workflow.
 
     flyte run workflow.py pipeline --x 21 --label demo
+
+The Rust task becomes a child action of a Python parent, and this needs **zero
+changes on the Rust side**: the parent writes the child's `inputs.pb` and reads
+back its `outputs.pb`, which is exactly what the worker already does.
 
 The console then shows the Python parent, the Rust task as its child action, and
 that child's own three `#[flyte::trace]` children.
@@ -21,10 +16,9 @@ task puts it in scope — harmless, and it means either can be launched from her
 
 import flyte
 
-# Sibling import: the CLI appends this file's directory to sys.path before
-# executing it, and the default --copy-style loaded_modules carries rust_task.py
-# into the parent's container.
-from rust_task import my_task, rust_env
+# Sibling import: `flyte run` puts this file's directory on sys.path, and the
+# default --copy-style loaded_modules carries task.py into the parent's container.
+from task import my_task, rust_env
 
 # depends_on is REQUIRED, not decorative: it is what pulls the Rust task's image
 # into the plan (and therefore into the ImageCache handed to the child at
@@ -40,4 +34,3 @@ async def pipeline(x: int = 21, label: str = "demo") -> str:
     described = await my_task(x=x, label=label)
     # Prove we got a real Python str back, not a handle.
     return described.upper()
-

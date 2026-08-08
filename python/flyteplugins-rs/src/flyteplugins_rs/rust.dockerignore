@@ -1,0 +1,15 @@
+# Build-context filter for Rust worker images.
+# NOTE: supplying a .dockerignore REPLACES the SDK's standard ignore patterns,
+# so everything to exclude must be listed here.
+target
+**/target
+.git
+**/.git
+__pycache__
+**/__pycache__
+*.pyc
+.venv
+**/.venv
+.flyte
+**/.flyte
+.DS_Store

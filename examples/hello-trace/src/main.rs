@@ -6,7 +6,7 @@
 //!
 //! - dev loop:      `cargo test -p hello-trace`  (runs the task in-process)
 //! - its interface: `cargo run -p hello-trace -- describe-interface`
-//! - launch it:     see `rust_task.py` / `workflow.py` next door
+//! - launch it:     see `task.py` / `workflow.py` next door
 //!
 //! In a task container the backend supplies `a0 --inputs <uri> --outputs-path
 //! <uri>` plus the run env; nothing here has to know about that.

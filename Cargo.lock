@@ -203,6 +203,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "concurrent-traces"
+version = "0.1.0"
+dependencies = [
+ "flyte",
+ "futures",
+ "serde",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1706,6 +1715,14 @@ dependencies = [
  "wasm-streams",
  "web-sys",
  "webpki-roots",
+]
+
+[[package]]
+name = "retry-replay"
+version = "0.1.0"
+dependencies = [
+ "flyte",
+ "tokio",
 ]
 
 [[package]]
