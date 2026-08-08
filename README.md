@@ -32,6 +32,49 @@ in user code names the worker plumbing. Pair it with `#[flyte::task]` (which
 generates the `_entry` fn it calls) on a fn at the crate root of a bin target;
 attribute order doesn't matter.
 
+## Quick start
+
+Prerequisites, once:
+
+- Rust toolchain, plus a Python with `uv` (the launcher uses the Python SDK as
+  a client — nothing Python runs in the task container).
+- Sibling checkouts, as this repo's path deps expect until the crate is
+  published: `../flyte-sdk` (with `rs_controller` inside it).
+- A Flyte v2 / Union config whose image builder is **remote** — that is what
+  builds the worker image for you, no docker needed:
+
+  ```yaml
+  # ~/.flyte/config.yaml
+  admin:
+    endpoint: dns:///<your-cluster>
+  image:
+    builder: remote        # without this the local builder demands a registry
+  ```
+
+Then:
+
+```bash
+# 1. dev loop — runs the task in-process, no backend, no container
+cargo test -p hello-trace
+
+# 2. build the worker; the launcher reads the task's interface from the binary
+cargo build -p hello-trace
+cargo run -p hello-trace -- describe-interface   # see what it declares
+
+# 3. run it on the cluster (first run builds the image remotely, then cached)
+cd examples/hello-trace
+uv run --project ../../../flyte-sdk flyte run \
+    --project <project> --domain <domain> rust_task.py my_task --x 21 --label demo
+
+# 4. or call it from a Python workflow (Rust task as a child action)
+uv run --project ../../../flyte-sdk flyte run \
+    --project <project> --domain <domain> workflow.py pipeline --x 21 --label demo
+```
+
+The console shows the run with one child trace action per `#[flyte::trace]`
+step, recorded by the Rust SDK from inside the container. Details on each step
+below; `examples/hello-trace/README.md` maps which file does what.
+
 ## Demo: run it locally (no backend)
 
 Traced fns simply run their bodies when no backend is attached, so `flyte::run`
