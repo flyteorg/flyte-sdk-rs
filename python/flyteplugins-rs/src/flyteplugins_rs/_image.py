@@ -14,11 +14,68 @@ task puts the binary path in `args[0]`; and the remote builder ignores
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import flyte
 
-_IGNORE_FILE = Path(__file__).parent / "rust.dockerignore"
+# Fallback only. The tag hash can only honour an ignore file that is named
+# `.dockerignore` and sits at an ancestor of the copied sources -- see
+# `_ignore_file_for` -- which a file shipped inside this package never is.
+_PACKAGED_IGNORE_FILE = Path(__file__).parent / "rust.dockerignore"
+
+_IGNORE_NAME = ".dockerignore"
+
+
+def _ignore_file_for(context_root: Path) -> Path:
+    """The ignore file to declare, preferring one the tag hash can actually use.
+
+    The SDK consumes the ignore list through two different paths, and only one of
+    them accepts an arbitrary filename:
+
+    - the build-context upload reads the DockerIgnore layer's path directly, so
+      any filename works;
+    - `Image._get_hash_digest` (which computes the tag) instead constructs a
+      `DockerfileIgnore(<dir of that path>)`, and that class loads only
+      `<dir>/.dockerignore` and only matches paths *underneath* `<dir>`.
+
+    So an ignore file named anything else, or living outside the copied sources,
+    is silently a no-op for the tag: the hash reads every "ignored" file --
+    cargo's multi-GB `target/` included -- and any launcher edit mints a new tag
+    and triggers a full image rebuild. Preferring `<context_root>/.dockerignore`
+    satisfies both paths at once.
+    """
+    candidate = context_root / _IGNORE_NAME
+    if candidate.is_file():
+        return candidate
+
+    print(
+        f"warning: no {_IGNORE_NAME} at {context_root}; falling back to "
+        f"{_PACKAGED_IGNORE_FILE.name}, which the SDK cannot apply when hashing the "
+        f"image tag. Expect slow `flyte run` startup (the hash reads target/) and a "
+        f"rebuild on every source edit. Fix: copy {_PACKAGED_IGNORE_FILE} to "
+        f"{candidate}.",
+        file=sys.stderr,
+    )
+    return _PACKAGED_IGNORE_FILE
+
+
+def _warn_on_unignored_target(source: Path, ignore_file: Path) -> None:
+    """Flag a copied folder whose `target/` the tag hash will read anyway.
+
+    Hashing a cargo `target/` is a silent multi-second-to-multi-minute stall with
+    no output, so name the folder rather than letting `flyte run` look hung.
+    """
+    if not (source / "target").is_dir():
+        return
+    if ignore_file.name == _IGNORE_NAME and ignore_file.parent in (source, *source.parents):
+        return  # the hash will apply the ignore to this folder
+    print(
+        f"warning: {source} contains a cargo target/ that {ignore_file} does not cover "
+        f"when the image tag is hashed. `flyte run` will read that whole directory "
+        f"before it launches, and any local cargo build will change the image tag.",
+        file=sys.stderr,
+    )
 
 
 def rust_worker_image(
@@ -26,7 +83,6 @@ def rust_worker_image(
     crate_dir: Path,
     binary: str,
     workspace: Path | None = None,
-    rs_controller: Path | None = None,
     rust_base: str = "rust:1-bookworm",
     registry: str | None = None,
 ) -> flyte.Image:
@@ -38,19 +94,22 @@ def rust_worker_image(
     workspace makes every run mint a new tag and rebuild the image it is about
     to use.
 
-    `workspace`/`rs_controller` exist only while the `flyte` crate is
-    unpublished: they carry the path dependencies in the relative layout the
-    Cargo.tomls expect. Once the crate is on crates.io, `crate_dir` alone is the
-    whole build context and cargo fetches the SDK like any other dependency.
+    `workspace` exists only while the `flyte` crate is unpublished: it carries
+    the sibling path dependencies (`crates/flyte`, `crates/flyte-macros`) in the
+    relative layout the Cargo.tomls expect. Once the crate is on crates.io,
+    `crate_dir` alone is the whole build context and cargo fetches the SDK like
+    any other dependency.
     """
     registry = registry if registry is not None else os.environ.get("RUST_IMAGE_REGISTRY")
+    context_root = workspace if workspace is not None else crate_dir
+    ignore_file = _ignore_file_for(context_root)
 
     image = (
         flyte.Image.from_base(rust_base)
         .clone(name=f"{binary}-worker", registry=registry, extendable=True)
         # Replaces the SDK's default ignore set, which does not know about
         # cargo's target/ — without this the upload context is gigabytes.
-        .with_dockerignore(_IGNORE_FILE)
+        .with_dockerignore(ignore_file)
         # pyo3 build-time needs (temporary, until the pure-Rust controller
         # lands); single-stage means libpython is present at runtime for free.
         .with_apt_packages("python3", "python3-dev", "pkg-config")
@@ -63,6 +122,7 @@ def rust_worker_image(
 
     if workspace is None:
         # Published-crate shape: the user's crate is the entire context.
+        _warn_on_unignored_target(crate_dir, ignore_file)
         return image.with_source_folder(crate_dir, "./app").with_commands(
             [
                 f"cd app && cargo build --release --bin {binary}"
@@ -82,10 +142,8 @@ def rust_worker_image(
         image = image.with_source_file(workspace / "Cargo.lock", "./ws/Cargo.lock")
     for member_dir in ("crates", "examples"):
         if (workspace / member_dir).is_dir():
+            _warn_on_unignored_target(workspace / member_dir, ignore_file)
             image = image.with_source_folder(workspace / member_dir, f"./ws/{member_dir}")
-    if rs_controller is not None:
-        # Sibling of the workspace, matching ../../../flyte-sdk/rs_controller.
-        image = image.with_source_folder(rs_controller, "./flyte-sdk/rs_controller")
 
     return image.with_commands(
         [

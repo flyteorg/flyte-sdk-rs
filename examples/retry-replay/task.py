@@ -33,5 +33,4 @@ flaky, rust_env = rs.rust_task(
     # Path dependencies until the `flyte` crate is published; after that,
     # crate_dir alone is the whole build context.
     workspace=_WORKSPACE,
-    rs_controller=_WORKSPACE.parent / "flyte-sdk" / "rs_controller",
 )
