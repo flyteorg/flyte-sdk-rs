@@ -1,11 +1,11 @@
-# Build context must contain BOTH checkouts side by side (see scripts/build-image.sh):
-#   <ctx>/flyte-sdk/rs_controller   (path dependency of the SDK)
+# Build context is this repo alone (see scripts/build-image.sh):
 #   <ctx>/flyte-sdk-rust            (this repo)
+# flyte_core comes from git (crates/flyte/Cargo.toml), so no sibling checkout
+# needs to be staged into the context.
 FROM rust:1-bookworm AS build
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-COPY flyte-sdk/rs_controller flyte-sdk/rs_controller
 COPY flyte-sdk-rust flyte-sdk-rust
 WORKDIR /src/flyte-sdk-rust
 ENV PYO3_PYTHON=python3

@@ -1,4 +1,10 @@
-# Build-context filter for Rust worker images.
+# Build-context filter for Rust worker images -- the template/fallback copy.
+#
+# Copy this to `<workspace>/.dockerignore`. Only a file with that exact name,
+# sitting at an ancestor of the copied sources, is honoured when the SDK hashes
+# the image tag (see `_ignore_file_for` in _image.py); this packaged copy filters
+# the uploaded build context but not the hash.
+#
 # NOTE: supplying a .dockerignore REPLACES the SDK's standard ignore patterns,
 # so everything to exclude must be listed here.
 target

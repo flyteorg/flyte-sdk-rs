@@ -1,0 +1,36 @@
+# Build-context filter for the Rust worker images.
+#
+# This file MUST live at the workspace root and MUST be named `.dockerignore`.
+# The SDK uses the ignore list twice, through two different code paths:
+#
+# - uploading the build context, which reads whatever path the image's
+#   DockerIgnore layer points at (any filename works); and
+# - computing the image tag (`Image._get_hash_digest`), which builds a
+#   `DockerfileIgnore(<dir of that path>)` — and that class only ever loads
+#   `<dir>/.dockerignore`, and only matches paths *underneath* `<dir>`.
+#
+# So an ignore file with any other name, or sitting anywhere but an ancestor of
+# the copied sources, is silently a no-op for the tag hash: the hash then walks
+# and reads every ignored file, and every launcher edit mints a new tag and
+# rebuilds the image.
+#
+# NOTE: supplying a .dockerignore REPLACES the SDK's standard ignore patterns,
+# so everything to exclude must be listed here.
+target
+**/target
+.git
+**/.git
+__pycache__
+**/__pycache__
+*.pyc
+**/*.pyc
+# The worker image builds Rust only; excluding Python keeps launcher edits from
+# invalidating the image tag. Both forms: a bare pattern matches only the context
+# root, as with `target` / `**/target` above.
+*.py
+**/*.py
+.venv
+**/.venv
+.flyte
+**/.flyte
+.DS_Store
