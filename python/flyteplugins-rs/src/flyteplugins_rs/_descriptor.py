@@ -17,7 +17,7 @@ from __future__ import annotations
 import inspect
 import json
 import subprocess
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +47,7 @@ def find_binary(workspace: Path, binary: str) -> Path | None:
     return None
 
 
-@lru_cache(maxsize=None)
+@cache
 def _describe(binary_path: str) -> str:
     return subprocess.run(
         [binary_path, "describe-interface"], check=True, capture_output=True, text=True

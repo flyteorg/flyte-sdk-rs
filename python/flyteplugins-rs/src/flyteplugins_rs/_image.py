@@ -125,8 +125,10 @@ def rust_worker_image(
         _warn_on_unignored_target(crate_dir, ignore_file)
         return image.with_source_folder(crate_dir, "./app").with_commands(
             [
-                f"cd app && cargo build --release --bin {binary}"
-                f" && install target/release/{binary} /usr/local/bin/{binary}"
+                (
+                    f"cd app && cargo build --release --bin {binary}"
+                    f" && install target/release/{binary} /usr/local/bin/{binary}"
+                )
             ]
         )
 
@@ -147,7 +149,9 @@ def rust_worker_image(
 
     return image.with_commands(
         [
-            f"cd ws && cargo build --release --bin {binary}"
-            f" && install target/release/{binary} /usr/local/bin/{binary}"
+            (
+                f"cd ws && cargo build --release --bin {binary}"
+                f" && install target/release/{binary} /usr/local/bin/{binary}"
+            )
         ]
     )

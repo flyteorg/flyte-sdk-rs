@@ -13,6 +13,7 @@ members = [
 edition = "2021"
 version = "0.1.0"
 license = "Apache-2.0"
+repository = "https://github.com/flyteorg/flyte-sdk-rs"
 
 [workspace.dependencies]
 flyteidl2 = "=2.0.37"
