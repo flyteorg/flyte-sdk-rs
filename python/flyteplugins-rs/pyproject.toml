@@ -16,3 +16,10 @@ packages = ["src/flyteplugins_rs"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/flyteplugins_rs/rust.dockerignore" = "flyteplugins_rs/rust.dockerignore"
+
+# Pinned so local runs and CI agree. The package is written at ~95 columns;
+# ruff's default of 88 would rewrap hand-tuned signatures and comment layout.
+[tool.ruff]
+line-length = 100
+# Docs code blocks are laid out for reading, not for the formatter's line budget.
+extend-exclude = ["*.md"]

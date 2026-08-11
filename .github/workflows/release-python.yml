@@ -1,0 +1,127 @@
+# Publish `flyteplugins-rs` to PyPI.
+#
+# Release train is independent from the Rust crates' (see release-rust.yml).
+# The two halves are coupled by the descriptor contract
+# (`flyte_interface_version`), not by matching version numbers, so this workflow
+# never waits on a crates.io release. See docs/releasing.md.
+#
+#   git tag py-v0.2.0 && git push origin py-v0.2.0
+name: release-python
+
+on:
+  push:
+    tags: ["py-v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and check, but do not upload to PyPI"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify sdist + wheel
+    runs-on: ubuntu-latest
+    # Scoped to this job: the publish job has no checkout, so a workflow-level
+    # default would point its steps at a directory that does not exist.
+    defaults:
+      run:
+        working-directory: python/flyteplugins-rs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade build twine ruff
+
+      - name: Lint
+        run: ruff check . && ruff format --check .
+
+      # A tag that disagrees with pyproject.toml would publish a version nobody
+      # can reproduce from the tree. Fail before anything is built.
+      - name: Check tag matches pyproject version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag_version="${GITHUB_REF_NAME#py-v}"
+          pkg_version=$(python -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          echo "tag=$tag_version pyproject=$pkg_version"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME implies version $tag_version but pyproject.toml says $pkg_version"
+            exit 1
+          fi
+
+      - name: Build
+        run: python -m build --sdist --wheel --outdir dist
+
+      - name: Twine check
+        run: twine check dist/*
+
+      # rust.dockerignore is force-included via [tool.hatch...force-include] and
+      # is not a .py file, so it is exactly the kind of asset a packaging change
+      # drops silently. Without it in the wheel the plugin falls back to an
+      # ignore-less build context: multi-GB uploads and a rebuild per run.
+      - name: Assert rust.dockerignore is packaged
+        run: |
+          set -euo pipefail
+          for artifact in dist/*.whl dist/*.tar.gz; do
+            case "$artifact" in
+              *.whl)    listing=$(python -m zipfile -l "$artifact") ;;
+              *.tar.gz) listing=$(tar -tzf "$artifact") ;;
+            esac
+            if ! grep -q "flyteplugins_rs/rust.dockerignore" <<<"$listing"; then
+              echo "::error::rust.dockerignore missing from $artifact"
+              exit 1
+            fi
+            echo "ok: $artifact"
+          done
+
+      # Install the built wheel into a clean venv and import it, so a broken
+      # dependency or a missing module fails here rather than for a user.
+      - name: Smoke-test the wheel
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --quiet dist/*.whl
+          /tmp/smoke/bin/python - <<'PY'
+          import pathlib
+          import flyteplugins_rs as rs
+
+          ignore = pathlib.Path(rs._image.__file__).parent / "rust.dockerignore"
+          assert ignore.is_file(), f"packaged ignore file missing at {ignore}"
+          assert rs.SUPPORTED_DESCRIPTOR_VERSION == 1, rs.SUPPORTED_DESCRIPTOR_VERSION
+          print("import ok, descriptor contract v", rs.SUPPORTED_DESCRIPTOR_VERSION)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: python/flyteplugins-rs/dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
+    runs-on: ubuntu-latest
+    # Trusted Publishing: PyPI mints a short-lived token from this workflow's
+    # OIDC identity, so there is no API token in repo secrets. Configure the
+    # publisher on PyPI first (see docs/releasing.md) or the upload 403s.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/flyteplugins-rs
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

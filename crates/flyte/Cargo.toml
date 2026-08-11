@@ -3,6 +3,7 @@ name = "flyte"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Flyte SDK for Rust (v0: single-node traces)"
 
 [dependencies]
@@ -11,7 +12,7 @@ description = "Flyte SDK for Rust (v0: single-node traces)"
 # it goes away entirely with the pure-Rust controller swap. To develop against a
 # local checkout, point this at a path instead, or use a [patch] section.
 flyte_core = { git = "https://github.com/flyteorg/flyte-sdk", rev = "580a35ca4e26bd5944a5fd9f2370df7d7c1ef046" }
-flyte-macros = { path = "../flyte-macros" }
+flyte-macros = { path = "../flyte-macros", version = "0.1.0" }
 flyteidl2 = { workspace = true }
 prost = { workspace = true }
 tokio = { workspace = true }
