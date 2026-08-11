@@ -69,8 +69,6 @@ with `dry_run` checked: everything runs except the upload.
 
 ## Cutting a Rust release
 
-> **Blocked today.** See below.
-
 1. Bump `version` under `[workspace.package]` in the root `Cargo.toml` (both
    crates inherit it).
 2. Merge to `main`.
@@ -80,37 +78,43 @@ with `dry_run` checked: everything runs except the upload.
    git tag rs-v0.2.0 && git push origin rs-v0.2.0
    ```
 
-`release-rust.yml` runs `cargo fmt --check`, clippy with `-D warnings`, the test
-suite, a tag/manifest version check, and a dry-run publish of each crate — then
-publishes `flyte-macros` before `flyte`, which is the required order since
-`flyte` depends on it.
+`release-rust.yml` runs clippy with `-D warnings`, the test suite, a
+tag/manifest version check, and a dry-run publish — then publishes both crates.
 
-### The `flyte_core` blocker
+Both are passed to a single `cargo publish`, which orders them by dependency
+(`flyte` needs `flyte-macros`) and waits for each to reach the index before
+starting the next. Publishing them as two separate commands cannot work for a
+first release: dry-running `flyte` on its own looks for a `flyte-macros` that is
+not on the registry yet. Needs cargo 1.90+ for workspace publishing.
 
-`crates/flyte` depends on `flyte_core` by git rev:
+### The `flyte_core` dependency
+
+`crates/flyte` depends on `flyte_core`, which supplies the transport (ActionsService
+enqueue/watch, the informer, auth). It lives in
+[flyteorg/flyte-sdk](https://github.com/flyteorg/flyte-sdk) under `rs_controller/`
+and is released from there by tagging `rs-v<version>`.
+
+It used to be a git dependency, which made `flyte` unpublishable outright —
+crates.io rejects crates whose dependencies are not on the registry. Since
+`flyte_core` 0.1.0 that is a normal version requirement and the blocker is gone.
+
+Two things follow from it that are worth knowing:
+
+- **`flyteidl2` must match exactly.** Both crates pin it with `=`, and they pass
+  flyteidl2 types across the API boundary, so two different `=` requirements are
+  unresolvable rather than merely awkward. Bump `flyteidl2` in the root
+  `Cargo.toml` in the same change that bumps `flyte_core`.
+- **The worker still embeds Python.** `flyte_core`'s default features include
+  `pyo3/auto-initialize`, so task binaries link `libpython`. That is why the
+  worker image installs `python3-dev`. It goes away with the pure-Rust
+  controller swap, which is a breaking release of `flyte_core`.
+
+To develop against a local `flyte_core` checkout, add to the root `Cargo.toml`:
 
 ```toml
-flyte_core = { git = "https://github.com/flyteorg/flyte-sdk", rev = "580a35c…" }
+[patch.crates-io]
+flyte_core = { path = "../flyte-sdk/rs_controller" }
 ```
-
-crates.io does not accept crates with git dependencies. `cargo publish` fails
-with:
-
-```
-all dependencies must have a version requirement specified when publishing.
-dependency `flyte_core` does not specify a version
-```
-
-`flyte-macros` publishes cleanly today; `flyte` cannot until one of these
-happens:
-
-- **`flyte_core` is published to crates.io** (the name is currently unclaimed),
-  and the dependency becomes a normal version requirement; or
-- **the pure-Rust controller swap lands**, which removes the `flyte_core`/pyo3
-  dependency altogether — the outcome the code comments already anticipate.
-
-The workflow deliberately fails at the dry-run step rather than letting a tag
-imply a release that cannot ship.
 
 ## One-time setup
 
