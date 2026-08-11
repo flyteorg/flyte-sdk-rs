@@ -9,12 +9,10 @@ binary itself (`cargo run -p hello-trace -- describe-interface`).
 from pathlib import Path
 
 import flyteplugins_rs as rs
-import interface_gen
 
 _CRATE = Path(__file__).resolve().parent
 
 my_task, rust_env = rs.rust_task(
     crate_dir=_CRATE,
     binary="hello-trace",
-    fallback_descriptor=interface_gen.DESCRIPTOR,
 )

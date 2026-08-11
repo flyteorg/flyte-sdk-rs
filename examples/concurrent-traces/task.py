@@ -11,12 +11,10 @@ Inputs and outputs come from the worker binary
 from pathlib import Path
 
 import flyteplugins_rs as rs
-import interface_gen
 
 _CRATE = Path(__file__).resolve().parent
 
 fanout, rust_env = rs.rust_task(
     crate_dir=_CRATE,
     binary="concurrent-traces",
-    fallback_descriptor=interface_gen.DESCRIPTOR,
 )

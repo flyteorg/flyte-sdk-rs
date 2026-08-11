@@ -1,0 +1,12 @@
+[package]
+name = "custom-image"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+# Written the way a user's crate would be: versions, not workspace inheritance
+# and not path dependencies, so this directory builds on its own -- which is what
+# the worker image does. See [patch.crates-io] in the root manifest.
+[dependencies]
+flyte = "0.1"
