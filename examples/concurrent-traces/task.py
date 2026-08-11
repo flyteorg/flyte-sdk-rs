@@ -14,13 +14,9 @@ import flyteplugins_rs as rs
 import interface_gen
 
 _CRATE = Path(__file__).resolve().parent
-_WORKSPACE = _CRATE.parents[1]
 
 fanout, rust_env = rs.rust_task(
     crate_dir=_CRATE,
     binary="concurrent-traces",
     fallback_descriptor=interface_gen.DESCRIPTOR,
-    # Path dependencies until the `flyte` crate is published; after that,
-    # crate_dir alone is the whole build context.
-    workspace=_WORKSPACE,
 )

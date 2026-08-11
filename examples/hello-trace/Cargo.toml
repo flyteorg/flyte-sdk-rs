@@ -1,14 +1,17 @@
 [package]
 name = "hello-trace"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
 publish = false
 # The worker is the point of this crate; smoke_fixture is a helper for
 # scripts/smoke.sh. Without this, `cargo run -p hello-trace` cannot choose.
 default-run = "hello-trace"
 
+# Written the way a user's crate would be: versions, not workspace inheritance
+# and not path dependencies, so this directory builds on its own -- which is what
+# the worker image does. See [patch.crates-io] in the root manifest.
 [dependencies]
-flyte = { path = "../../crates/flyte" }
-serde = { workspace = true }
-tracing = { workspace = true }
+flyte = "0.1"
+serde = { version = "1", features = ["derive"] }
+tracing = "0.1"

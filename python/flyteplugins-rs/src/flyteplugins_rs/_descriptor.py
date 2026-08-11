@@ -38,12 +38,26 @@ _PY_TYPES: dict[str, type] = {
 }
 
 
-def find_binary(workspace: Path, binary: str) -> Path | None:
-    """The locally built worker binary, release preferred, or None."""
-    for profile in ("release", "debug"):
-        candidate = workspace / "target" / profile / binary
-        if candidate.exists():
-            return candidate
+def find_binary(start: Path, binary: str) -> Path | None:
+    """The locally built worker binary, release preferred, or None.
+
+    Searches `start` and its ancestors, because cargo's output directory is not
+    always beside the crate: a standalone crate builds into its own `target/`,
+    while a workspace member builds into the *workspace root's* `target/`, which
+    is an ancestor. Checking only one layout would silently fall back to the
+    bundled descriptor for the other -- losing the guarantee that the Rust
+    signature is what actually gets launched.
+
+    Bounded at the enclosing repository so a miss cannot wander up the
+    filesystem and match some unrelated binary of the same name.
+    """
+    for directory in (start, *start.parents):
+        for profile in ("release", "debug"):
+            candidate = directory / "target" / profile / binary
+            if candidate.is_file():
+                return candidate
+        if (directory / ".git").exists():
+            break
     return None
 
 
@@ -55,10 +69,10 @@ def _describe(binary_path: str) -> str:
 
 
 def load_descriptor(
-    *, crate_dir: Path, workspace: Path, binary: str, fallback: dict[str, Any]
+    *, crate_dir: Path, search_from: Path, binary: str, fallback: dict[str, Any]
 ) -> dict[str, Any]:
     """The worker's interface, from the binary when available else `fallback`."""
-    binary_path = find_binary(workspace, binary)
+    binary_path = find_binary(search_from, binary)
     if binary_path is None:
         return fallback
 

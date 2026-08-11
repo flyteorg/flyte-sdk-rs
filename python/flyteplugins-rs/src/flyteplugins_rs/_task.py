@@ -87,8 +87,11 @@ def rust_task(
     into the deployment plan.
     """
     descriptor = load_descriptor(
+        # Where to start looking for the built binary. `find_binary` walks up
+        # from here, so a workspace member resolves to the workspace's target/
+        # without `workspace` having to be passed.
         crate_dir=crate_dir,
-        workspace=workspace or crate_dir,
+        search_from=crate_dir,
         binary=binary,
         fallback=fallback_descriptor,
     )

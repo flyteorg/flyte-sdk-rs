@@ -1,0 +1,29 @@
+# Build-context filter for this example's worker image.
+#
+# Must sit here, at the build-context root, and must be named `.dockerignore`:
+# the SDK's tag hash builds a DockerfileIgnore rooted at this file's directory
+# and only loads that exact name, so an ignore file anywhere else is silently a
+# no-op for the tag. Without it, editing task.py mints a new image tag and
+# rebuilds the worker on every run.
+#
+# NOTE: supplying a .dockerignore REPLACES the SDK's standard ignore patterns,
+# so everything to exclude must be listed here.
+target
+**/target
+.git
+**/.git
+__pycache__
+**/__pycache__
+*.pyc
+**/*.pyc
+# The worker image builds Rust only; excluding Python and docs keeps launcher and
+# README edits from invalidating the image tag.
+*.py
+**/*.py
+*.md
+**/*.md
+.venv
+**/.venv
+.flyte
+**/.flyte
+.DS_Store
