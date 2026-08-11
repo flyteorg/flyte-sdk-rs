@@ -1,6 +1,6 @@
 [project]
 name = "flyteplugins-rs"
-version = "0.1.0"
+version = "0.0.1"
 description = "Launch Rust Flyte tasks from Python"
 readme = "README.md"
 requires-python = ">=3.10"
