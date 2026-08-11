@@ -93,8 +93,16 @@ The build context is the directory holding the Dockerfile.
 
 Custom Dockerfiles only build with the **local** docker builder. The remote
 builder rejects them outright -- it takes declarative layers, not a Dockerfile it
-would have to parse -- so a config with `image: {builder: remote}` needs
-`--image-builder local` (and a local docker) for this path.
+would have to parse -- so a config with `image: {builder: remote}` needs a local
+docker and:
+
+    flyte --image-builder local run task.py <task> ...
+
+Note the flag sits on `flyte`, not on `run`: `flyte run --image-builder ...` is
+rejected as an unknown option.
+
+A registry is also required, because `flyte.Image.from_dockerfile` has none to
+inherit -- pass `registry=` or set RUST_IMAGE_REGISTRY.
 """
 
 

@@ -92,7 +92,7 @@ Dockerfile brings its own context, so put the copying in the Dockerfile.
 > Custom Dockerfiles build only with the **local** docker builder. The remote
 > builder takes declarative layers, not a Dockerfile it would have to parse, and
 > rejects one outright. With `image: {builder: remote}` in your config, this path
-> needs `flyte run --image-builder local` and a working local docker.
+> needs `flyte --image-builder local run` and a working local docker.
 
 A worked example is the
 [`custom-image`](https://github.com/flyteorg/flyte-sdk-rs/tree/main/examples/custom-image)

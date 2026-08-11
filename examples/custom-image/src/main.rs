@@ -9,7 +9,7 @@
 //! The Dockerfile beside this file is wired up in `task.py` via `dockerfile=`.
 //! Note it must be built with the LOCAL docker builder:
 //!
-//!     flyte run --image-builder local task.py probe_image --label demo
+//!     flyte --image-builder local run task.py probe_image --label demo
 //!
 //! - dev loop:      `cargo test -p custom-image`
 //! - its interface: `cargo run -p custom-image -- describe-interface`
