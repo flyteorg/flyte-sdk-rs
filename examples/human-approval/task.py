@@ -15,18 +15,13 @@ Inputs and outputs come from the worker binary
 (`cargo run -p human-approval -- describe-interface`), not from this file.
 """
 
-import sys
 from pathlib import Path
+
+import flyteplugins_rs as rs
+import interface_gen
 
 _CRATE = Path(__file__).resolve().parent
 _WORKSPACE = _CRATE.parents[1]
-
-# Until flyteplugins-rs is released, import it from this repo.
-sys.path.insert(0, str(_WORKSPACE / "python" / "flyteplugins-rs" / "src"))
-
-import flyteplugins_rs as rs  # noqa: E402
-
-import interface_gen  # noqa: E402
 
 gated_deploy, rust_env = rs.rust_task(
     crate_dir=_CRATE,

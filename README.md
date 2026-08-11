@@ -84,6 +84,25 @@ A rejection or a timeout comes back as `Error::Condition`, carrying a
 
 See [`examples/`](examples) for concurrent traces and replay-on-retry too.
 
+## Install
+
+Two halves. The **crate** compiles into your task container; the **Python
+launcher** registers the task with Flyte and builds that container's image.
+
+```bash
+pip install flyteplugins-rs
+```
+
+```toml
+# Cargo.toml — not on crates.io yet, see Status
+[dependencies]
+flyte = { git = "https://github.com/flyteorg/flyte-sdk-rs" }
+```
+
+The two are versioned independently: what keeps them compatible is a descriptor
+contract checked at launch, not matching version numbers. See
+[docs/releasing.md](docs/releasing.md).
+
 ## Run locally
 
 Without a backend attached, traced fns simply run their bodies, so `flyte::run`
@@ -158,11 +177,23 @@ flyte run workflow.py pipeline --x 21 --label demo
 `depends_on=[rust_env]` is required — it is what carries the Rust task's image
 into the deployment plan.
 
-## Building from source
+## Working on the SDK
 
 ```bash
 cargo build && cargo test
 ```
+
+The examples import the **released** `flyteplugins-rs` from PyPI, so they read
+like a user's project. When changing the launcher itself, install this checkout
+over it:
+
+```bash
+./scripts/dev-setup.sh          # editable install; undo with
+                                # uv pip install --force-reinstall flyteplugins-rs
+```
+
+The Rust half needs no such switch — examples take `flyte` by path within this
+workspace, so `cargo build` always exercises the working tree.
 
 Transport comes from the `flyte_core` crate in
 [flyte-sdk](https://github.com/flyteorg/flyte-sdk), pulled as a pinned git
@@ -190,7 +221,14 @@ from Rust (a Python parent calling a Rust task works today), a native Rust
 launcher, files/dataframes, and trace groups. Expect contract changes while
 experimental.
 
-`flyte::condition` needs [flyteorg/flyte-sdk#1401](https://github.com/flyteorg/flyte-sdk/pull/1401)
-in the sibling `flyte-sdk` checkout until that merges. It has been run end to
-end against a live backend — task pauses, `flyte signal condition` resolves it,
-task resumes with the value.
+`flyte::condition` has been run end to end against a live backend — task pauses,
+`flyte signal condition` resolves it, task resumes with the value. It needs
+[flyteorg/flyte-sdk#1401](https://github.com/flyteorg/flyte-sdk/pull/1401),
+which is merged and is the `flyte_core` rev pinned here.
+
+**Packaging.** The launcher is on PyPI as
+[`flyteplugins-rs`](https://pypi.org/project/flyteplugins-rs/). The `flyte` crate
+is not on crates.io yet: it depends on `flyte_core` by git rev, and crates.io
+rejects git dependencies. Publishing `flyte_core`
+([flyteorg/flyte-sdk#1408](https://github.com/flyteorg/flyte-sdk/pull/1408))
+unblocks it; until then, depend on this repo by git as shown above.

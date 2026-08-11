@@ -1,14 +1,17 @@
 # flyteplugins-rs
 
 > [!WARNING]
-> **Experimental**, and not yet published. The examples in this repository import
-> it from source; APIs may change.
+> **Experimental.** The APIs and wire contracts may change without notice.
 
-Launch [Rust Flyte tasks](https://github.com/unionai/flyte-sdk-rs) from Python.
+Launch [Rust Flyte tasks](https://github.com/flyteorg/flyte-sdk-rs) from Python.
 
 A Rust task container runs a compiled binary and no Python. This package is the
 launch-time half: it reads a worker binary's self-described interface, declares
 the matching Flyte task, and builds the worker image from Rust sources.
+
+```bash
+pip install flyteplugins-rs
+```
 
 ```python
 from pathlib import Path
@@ -55,3 +58,21 @@ async def pipeline(x: int) -> str:
 - **Task** — a container task typed `rust-task`, whose args match the worker's
   contract, and whose `args[0]` is the binary (image layers cannot set an
   ENTRYPOINT).
+
+## Compatibility
+
+The launcher and the worker agree on a versioned descriptor contract, currently
+`flyte_interface_version = 1`. A worker built against a newer SDK is refused at
+launch with a message naming both sides, rather than failing inside the
+container. Package versions are deliberately **not** kept in step with the
+`flyte` Rust crate's — see
+[docs/releasing.md](https://github.com/flyteorg/flyte-sdk-rs/blob/main/docs/releasing.md).
+
+## Developing
+
+To run against a checkout instead of the released package:
+
+```bash
+git clone https://github.com/flyteorg/flyte-sdk-rs && cd flyte-sdk-rs
+./scripts/dev-setup.sh
+```
