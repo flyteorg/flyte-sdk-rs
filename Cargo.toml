@@ -27,3 +27,11 @@ pyo3-async-runtimes = { version = "0.24", features = ["tokio-runtime"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "1"
 tracing = "0.1"
+
+# Examples depend on `flyte` by version, exactly as a user's crate does -- which
+# is also what lets the worker image build from the example directory alone.
+# In-workspace builds redirect that to the working tree, so `cargo test` and
+# `cargo build` here still exercise local SDK changes rather than the release.
+[patch.crates-io]
+flyte = { path = "crates/flyte" }
+flyte-macros = { path = "crates/flyte-macros" }

@@ -94,9 +94,9 @@ pip install flyteplugins-rs
 ```
 
 ```toml
-# Cargo.toml — not on crates.io yet, see Status
+# Cargo.toml
 [dependencies]
-flyte = { git = "https://github.com/flyteorg/flyte-sdk-rs" }
+flyte = "0.1"
 ```
 
 The two are versioned independently: what keeps them compatible is a descriptor
@@ -192,13 +192,19 @@ over it:
                                 # uv pip install --force-reinstall flyteplugins-rs
 ```
 
-The Rust half needs no such switch — examples take `flyte` by path within this
-workspace, so `cargo build` always exercises the working tree.
+The Rust half needs no switch either. The examples depend on `flyte = "0.1"`
+exactly as your crate would, and a `[patch.crates-io]` in the root manifest
+redirects that to `crates/flyte` for in-workspace builds — so `cargo build` and
+`cargo test` here always exercise the working tree, while each example directory
+still builds standalone, which is what the worker image does.
 
-Transport comes from the `flyte_core` crate in
-[flyte-sdk](https://github.com/flyteorg/flyte-sdk), pulled as a pinned git
-dependency — so no sibling checkout is needed. To develop against a local copy,
-point `crates/flyte/Cargo.toml` at a path instead, or add a `[patch]` section.
+Transport comes from [`flyte_core`](https://crates.io/crates/flyte_core), released
+from [flyte-sdk](https://github.com/flyteorg/flyte-sdk) — no sibling checkout
+needed. To develop against a local copy, add it to the root `[patch.crates-io]`:
+
+```toml
+flyte_core = { path = "../flyte-sdk/rs_controller" }
+```
 
 That dependency is temporary: it links `libpython` (via pyo3) and disappears with
 the planned pure-Rust controller.
@@ -226,9 +232,11 @@ experimental.
 [flyteorg/flyte-sdk#1401](https://github.com/flyteorg/flyte-sdk/pull/1401),
 which is merged and is the `flyte_core` rev pinned here.
 
-**Packaging.** The launcher is on PyPI as
-[`flyteplugins-rs`](https://pypi.org/project/flyteplugins-rs/). The `flyte` crate
-is not on crates.io yet: it depends on `flyte_core` by git rev, and crates.io
-rejects git dependencies. Publishing `flyte_core`
-([flyteorg/flyte-sdk#1408](https://github.com/flyteorg/flyte-sdk/pull/1408))
-unblocks it; until then, depend on this repo by git as shown above.
+**Packaging.** Both halves are released: the crate as
+[`flyte`](https://crates.io/crates/flyte) on crates.io, the launcher as
+[`flyteplugins-rs`](https://pypi.org/project/flyteplugins-rs/) on PyPI.
+
+The worker still embeds a Python interpreter — the transport crate
+[`flyte_core`](https://crates.io/crates/flyte_core) enables `pyo3/auto-initialize`
+by default, so task binaries link `libpython` and the image installs
+`python3-dev`. That ends with the pure-Rust controller swap.

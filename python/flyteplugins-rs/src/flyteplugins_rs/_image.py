@@ -94,11 +94,12 @@ def rust_worker_image(
     workspace makes every run mint a new tag and rebuild the image it is about
     to use.
 
-    `workspace` exists only while the `flyte` crate is unpublished: it carries
-    the sibling path dependencies (`crates/flyte`, `crates/flyte-macros`) in the
-    relative layout the Cargo.tomls expect. Once the crate is on crates.io,
-    `crate_dir` alone is the whole build context and cargo fetches the SDK like
-    any other dependency.
+    Normally `crate_dir` is the whole build context: cargo fetches `flyte` from
+    crates.io like any other dependency. Pass `workspace` only when the crate
+    cannot build alone -- a workspace member inheriting `version.workspace` or
+    `[workspace.dependencies]`, or one depending on a sibling by path. That
+    copies every member directory, because cargo loads all of them and a missing
+    member fails before anything compiles.
     """
     registry = registry if registry is not None else os.environ.get("RUST_IMAGE_REGISTRY")
     context_root = workspace if workspace is not None else crate_dir

@@ -109,12 +109,20 @@ Two things follow from it that are worth knowing:
   worker image installs `python3-dev`. It goes away with the pure-Rust
   controller swap, which is a breaking release of `flyte_core`.
 
-To develop against a local `flyte_core` checkout, add to the root `Cargo.toml`:
+## Developing against local sources
+
+The root `Cargo.toml` already carries a `[patch.crates-io]` section pointing
+`flyte` and `flyte-macros` at `crates/`, so in-workspace builds always compile
+the working tree even though the examples depend on `flyte = "0.1"`. Add
+`flyte_core` there too to work against a local controller checkout:
 
 ```toml
 [patch.crates-io]
 flyte_core = { path = "../flyte-sdk/rs_controller" }
 ```
+
+For the Python launcher, `./scripts/dev-setup.sh` installs this checkout over the
+released package; `uv pip install --force-reinstall flyteplugins-rs` undoes it.
 
 ## One-time setup
 
