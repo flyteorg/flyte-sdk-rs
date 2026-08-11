@@ -93,13 +93,33 @@ The build context is the directory holding the Dockerfile.
 
 Custom Dockerfiles only build with the **local** docker builder. The remote
 builder rejects them outright -- it takes declarative layers, not a Dockerfile it
-would have to parse -- so a config with `image: {builder: remote}` needs
-`--image-builder local` (and a local docker) for this path.
+would have to parse -- so a config with `image: {builder: remote}` needs a local
+docker and:
+
+    flyte --image-builder local run task.py <task> ...
+
+Note the flag sits on `flyte`, not on `run`: `flyte run --image-builder ...` is
+rejected as an unknown option.
+
+A registry is also required, because `flyte.Image.from_dockerfile` has none to
+inherit -- pass `registry=` or set RUST_IMAGE_REGISTRY.
+
+The image is named `<binary>-worker` unless `image_name=` says otherwise. Note
+that pushing a name for the first time creates a *new* repository, and some
+registries -- GitHub Container Registry among them -- make new packages private
+by default, which the cluster then cannot pull (ImagePullBackOff, after a
+successful build and push). Either make the package public once, or point
+`image_name=` at a repository that already exists.
 """
 
 
 def _dockerfile_image(
-    *, dockerfile: Path, binary: str, registry: str | None, workspace: Path | None
+    *,
+    dockerfile: Path,
+    binary: str,
+    registry: str | None,
+    workspace: Path | None,
+    image_name: str | None,
 ) -> flyte.Image:
     """A worker image built from a user-supplied Dockerfile."""
     if not dockerfile.is_file():
@@ -120,7 +140,9 @@ def _dockerfile_image(
             "that contains what they need."
         )
     return flyte.Image.from_dockerfile(
-        file=dockerfile.resolve(), registry=registry, name=f"{binary}-worker"
+        file=dockerfile.resolve(),
+        registry=registry,
+        name=image_name or f"{binary}-worker",
     )
 
 
@@ -130,6 +152,7 @@ def rust_worker_image(
     binary: str,
     workspace: Path | None = None,
     dockerfile: Path | None = None,
+    image_name: str | None = None,
     rust_base: str = "rust:1-bookworm",
     registry: str | None = None,
 ) -> flyte.Image:
@@ -158,14 +181,18 @@ def rust_worker_image(
 
     if dockerfile is not None:
         return _dockerfile_image(
-            dockerfile=dockerfile, binary=binary, registry=registry, workspace=workspace
+            dockerfile=dockerfile,
+            binary=binary,
+            registry=registry,
+            workspace=workspace,
+            image_name=image_name,
         )
     context_root = workspace if workspace is not None else crate_dir
     ignore_file = _ignore_file_for(context_root)
 
     image = (
         flyte.Image.from_base(rust_base)
-        .clone(name=f"{binary}-worker", registry=registry, extendable=True)
+        .clone(name=image_name or f"{binary}-worker", registry=registry, extendable=True)
         # Replaces the SDK's default ignore set, which does not know about
         # cargo's target/ — without this the upload context is gigabytes.
         .with_dockerignore(ignore_file)

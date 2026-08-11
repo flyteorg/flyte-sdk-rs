@@ -10,7 +10,7 @@
 # relative to the crate. Only the LOCAL docker builder accepts a Dockerfile --
 # the remote builder takes declarative layers instead:
 #
-#     flyte run --image-builder local task.py probe_image --label demo
+#     flyte --image-builder local run task.py probe_image --label demo
 #
 # Nothing requires a Dockerfile: by default the SDK declares the image as layers,
 # which the remote builder compiles with no docker on your machine. Reach for
