@@ -12,7 +12,11 @@ the container) plus a small `task.py` that declares it to Flyte.
 
 ## Running any of them
 
+The launcher comes from PyPI; the worker is built from this workspace.
+
 ```bash
+pip install flyteplugins-rs
+
 cargo test -p <example>          # dev loop: runs the task in-process, no backend
 
 cargo build -p <example>         # the launcher reads the interface from the binary
@@ -35,5 +39,12 @@ cargo run -p <example> -- describe-interface
 | `task.py` | Declares the task to Flyte: reads the interface from the binary and builds the worker image. A handful of lines via [`flyteplugins-rs`](../python/flyteplugins-rs). |
 | `interface_gen.py` | Generated from `describe-interface`; the bundled interface used inside a container, where no cargo build exists. Do not edit. |
 
-`task.py` currently adds the in-repo `flyteplugins-rs` to `sys.path`; once that
-package is released, the two lines doing so go away.
+`task.py` imports the released [`flyteplugins-rs`](https://pypi.org/project/flyteplugins-rs/),
+exactly as your own project would. To run the examples against this checkout's
+launcher instead — when changing the launcher itself — use
+[`scripts/dev-setup.sh`](../scripts/dev-setup.sh).
+
+`workspace=` in each `task.py` is the one thing a user's project would not have.
+It exists because `flyte` is still an in-workspace path dependency, so the image
+build context is the whole workspace rather than the single crate. It goes away
+when the crate is published to crates.io.
