@@ -16,7 +16,10 @@ license = "Apache-2.0"
 repository = "https://github.com/flyteorg/flyte-sdk-rs"
 
 [workspace.dependencies]
-flyteidl2 = "=2.0.37"
+# Must match what flyte_core pins exactly. Both are `=` requirements and the two
+# crates pass flyteidl2 types across the boundary, so a mismatch is unresolvable
+# rather than merely unsatisfying -- bump this together with flyte_core.
+flyteidl2 = "=2.0.40"
 prost = { version = "0.13", features = ["std"] }
 tokio = { version = "1", features = ["full"] }
 pyo3 = { version = "0.24", features = ["abi3-py310"] }

@@ -6,11 +6,11 @@
 #
 #   git tag rs-v0.2.0 && git push origin rs-v0.2.0
 #
-# BLOCKED until `flyte_core` is on crates.io. `crates/flyte` depends on it by git
-# rev, and cargo refuses to publish a crate whose dependencies are not on the
-# registry ("all dependencies must have a version requirement specified when
-# publishing"). The preflight job below fails with exactly that error rather than
-# tagging a release that cannot ship. See docs/releasing.md.
+# Both crates publish as one batch. `flyte` depends on `flyte-macros`, so the
+# order matters -- and publishing them separately cannot work for a first
+# release, since dry-running `flyte` would look for a `flyte-macros` that is not
+# on the registry yet. Passing both to one `cargo publish` makes cargo order them
+# and resolve the sibling locally. Needs cargo 1.90+ for workspace publishing.
 name: release-rust
 
 on:
@@ -70,16 +70,12 @@ jobs:
             exit 1
           fi
 
-      # Publish order matters: `flyte` depends on `flyte-macros`, so the macros
-      # crate has to exist on the registry first. Dry-run in the same order.
-      - name: Dry-run publish flyte-macros
-        run: cargo publish --dry-run -p flyte-macros
-
-      # Expected to fail while flyte_core is a git dependency. The error names
-      # the offending dependency; that is the signal to publish flyte_core (or
-      # vendor it) before cutting an rs-v* tag.
-      - name: Dry-run publish flyte
-        run: cargo publish --dry-run -p flyte
+      # One batch, not two steps: cargo orders them by dependency and resolves
+      # `flyte`'s use of `flyte-macros` from the workspace. Dry-running them
+      # separately would fail here for a first release, because `flyte` would
+      # look for a `flyte-macros` that is not on the registry yet.
+      - name: Dry-run publish
+        run: cargo publish --dry-run -p flyte-macros -p flyte
 
   publish:
     name: Publish to crates.io
@@ -99,15 +95,10 @@ jobs:
       - name: Install pyo3 build dependencies
         run: sudo apt-get update && sudo apt-get install -y python3-dev pkg-config
 
-      # Dependency order. Modern cargo blocks until each published crate is
-      # visible in the index before returning, so `flyte` resolves the
+      # cargo publishes these in dependency order and waits for each to appear in
+      # the index before starting the next, so `flyte` resolves the
       # just-published `flyte-macros` without a manual sleep.
-      - name: Publish flyte-macros
-        run: cargo publish -p flyte-macros
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Publish flyte
-        run: cargo publish -p flyte
+      - name: Publish
+        run: cargo publish -p flyte-macros -p flyte
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

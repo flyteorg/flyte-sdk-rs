@@ -7,11 +7,12 @@ repository.workspace = true
 description = "Flyte SDK for Rust (v0: single-node traces)"
 
 [dependencies]
-# Transport (ActionsService enqueue/watch, informer, auth). Pinned by rev so
-# builds are reproducible; bump it deliberately. Not a crates.io release yet, and
-# it goes away entirely with the pure-Rust controller swap. To develop against a
-# local checkout, point this at a path instead, or use a [patch] section.
-flyte_core = { git = "https://github.com/flyteorg/flyte-sdk", rev = "580a35ca4e26bd5944a5fd9f2370df7d7c1ef046" }
+# Transport (ActionsService enqueue/watch, informer, auth). Goes away entirely
+# with the pure-Rust controller swap; until then it links libpython via pyo3,
+# because its default features include pyo3/auto-initialize -- which is what this
+# crate wants, since the worker embeds an interpreter. To develop against a local
+# checkout, add a [patch.crates-io] section pointing at it.
+flyte_core = "0.1"
 flyte-macros = { path = "../flyte-macros", version = "0.1.0" }
 flyteidl2 = { workspace = true }
 prost = { workspace = true }

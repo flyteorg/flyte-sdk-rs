@@ -355,7 +355,8 @@ dependencies = [
 [[package]]
 name = "flyte_core"
 version = "0.1.0"
-source = "git+https://github.com/flyteorg/flyte-sdk?rev=580a35ca4e26bd5944a5fd9f2370df7d7c1ef046#580a35ca4e26bd5944a5fd9f2370df7d7c1ef046"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5f259ed1cfb56f125339ac254841711aef5ca33532db9a3f4d9f91e3b3215a5"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -385,9 +386,9 @@ dependencies = [
 
 [[package]]
 name = "flyteidl2"
-version = "2.0.37"
+version = "2.0.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44a6906b406f1740a5e329f7dfbd0c6c5da241e896546f754880a12ce1493b12"
+checksum = "f66a507eaa7dfb69a86b339c0516233f67ae9c7efd5bb3f4d0e5b660ca2fde6a"
 dependencies = [
  "async-trait",
  "futures",
