@@ -68,8 +68,9 @@ def rust_task(
     *,
     crate_dir: Path,
     binary: str,
-    fallback_descriptor: dict[str, Any],
+    fallback_descriptor: dict[str, Any] | None = None,
     workspace: Path | None = None,
+    dockerfile: Path | None = None,
     env_name: str | None = None,
     image: flyte.Image | None = None,
     **task_kwargs: Any,
@@ -77,7 +78,15 @@ def rust_task(
     """Declare a Rust worker as a Flyte task, plus the environment holding it.
 
     The task's name and interface come from the binary's own descriptor, so the
-    Rust signature is the only place they are written down.
+    Rust signature is the only place they are written down. The descriptor is
+    read from a local `cargo build` when there is one, and otherwise from the
+    generated ``interface_gen.py`` beside the crate, which is found
+    automatically; ``fallback_descriptor`` only needs passing to override that.
+
+    The worker image is built from declarative layers by default. Pass
+    ``dockerfile`` to supply your own instead -- see :func:`rust_worker_image`
+    for the contract it has to meet -- or ``image`` for a fully custom
+    ``flyte.Image``.
 
     Extra keyword arguments (``retries``, ``cache``, ``resources``, ``timeout``,
     ...) pass straight through to the underlying task template.
@@ -105,6 +114,7 @@ def rust_task(
             crate_dir=crate_dir,
             binary=binary,
             workspace=workspace,
+            dockerfile=dockerfile,
         ),
         interface=native_interface(descriptor),
         **task_kwargs,

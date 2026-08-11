@@ -7,12 +7,10 @@ example (or a user's project) needs only a few lines:
 
     from pathlib import Path
     import flyteplugins_rs as rs
-    import interface_gen
 
     my_task, rust_env = rs.rust_task(
         crate_dir=Path(__file__).parent,
         binary="hello-trace",
-        fallback_descriptor=interface_gen.DESCRIPTOR,
     )
 
 The interface is never hand-written: it comes from `<binary> describe-interface`,
