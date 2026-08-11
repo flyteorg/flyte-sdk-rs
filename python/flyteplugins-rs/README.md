@@ -99,8 +99,12 @@ A worked example is the
 example: multi-stage so the toolchain does not ship, and installing a system
 package the task actually depends on.
 
-One extra requirement: `flyte.Image.from_dockerfile` has no registry to inherit,
-so set `RUST_IMAGE_REGISTRY` or pass `registry=` to `rust_task`.
+Two extra requirements. `flyte.Image.from_dockerfile` has no registry to
+inherit, so set `RUST_IMAGE_REGISTRY` or pass `registry=`. And the image is named
+`<binary>-worker` unless `image_name=` says otherwise — the first push to a name
+creates a new repository, which registries like GHCR make private by default, so
+the build and push succeed and the task then cannot start. Make the package
+public once, or point `image_name=` at one that already exists.
 
 ## Compatibility
 

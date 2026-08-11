@@ -12,6 +12,12 @@ Two things this example needs that the others do not:
 - a registry, because `flyte.Image.from_dockerfile` has none to inherit. Set
   `RUST_IMAGE_REGISTRY`, or pass `registry=` to `rust_task`.
 
+The first push to a given image name creates a new repository, and some
+registries — GitHub Container Registry among them — make new packages private by
+default. The build and push succeed and the task then fails to start, because the
+cluster cannot pull it. Make the package public once, or point `image_name=` at a
+repository that already exists.
+
 The task calls `git`, which the base image does not ship — so it runs only if the
 image really was built from this crate's Dockerfile.
 """
