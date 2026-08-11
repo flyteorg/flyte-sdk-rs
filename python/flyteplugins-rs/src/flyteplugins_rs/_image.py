@@ -78,11 +78,58 @@ def _warn_on_unignored_target(source: Path, ignore_file: Path) -> None:
     )
 
 
+_DOCKERFILE_CONTRACT = """A worker Dockerfile has to satisfy three things:
+
+1. **The binary lands at `/usr/local/bin/<binary>`.** The task passes that path
+   as `args[0]`, so it is the one hard-coded contract between image and task.
+2. **The image can run it.** `flyte_core` enables `pyo3/auto-initialize`, so the
+   worker links `libpython` -- a slim runtime stage needs `python3` and the
+   matching `libpython3.N` package, not just the interpreter.
+3. **No ENTRYPOINT is required.** With none set, Kubernetes execs the args
+   directly. Setting one is also fine: the worker skips a leading token it does
+   not recognise.
+
+The build context is the directory holding the Dockerfile.
+
+Custom Dockerfiles only build with the **local** docker builder. The remote
+builder rejects them outright -- it takes declarative layers, not a Dockerfile it
+would have to parse -- so a config with `image: {builder: remote}` needs
+`--image-builder local` (and a local docker) for this path.
+"""
+
+
+def _dockerfile_image(
+    *, dockerfile: Path, binary: str, registry: str | None, workspace: Path | None
+) -> flyte.Image:
+    """A worker image built from a user-supplied Dockerfile."""
+    if not dockerfile.is_file():
+        raise FileNotFoundError(f"dockerfile {dockerfile} does not exist")
+    if registry is None:
+        raise ValueError(
+            "a registry is required to build from a Dockerfile: pass registry=, or set "
+            "RUST_IMAGE_REGISTRY. Unlike the layered build, flyte.Image.from_dockerfile "
+            "has no registry to inherit."
+        )
+    if workspace is not None:
+        # Silently ignoring it would be worse: the Dockerfile picks its own
+        # context, so the workspace copying this argument requests never happens.
+        raise ValueError(
+            "workspace= and dockerfile= are mutually exclusive — a Dockerfile defines its "
+            "own build context (the directory holding it), so the workspace would not be "
+            "copied. Move the COPY steps into the Dockerfile and build it from a context "
+            "that contains what they need."
+        )
+    return flyte.Image.from_dockerfile(
+        file=dockerfile.resolve(), registry=registry, name=f"{binary}-worker"
+    )
+
+
 def rust_worker_image(
     *,
     crate_dir: Path,
     binary: str,
     workspace: Path | None = None,
+    dockerfile: Path | None = None,
     rust_base: str = "rust:1-bookworm",
     registry: str | None = None,
 ) -> flyte.Image:
@@ -100,8 +147,19 @@ def rust_worker_image(
     `[workspace.dependencies]`, or one depending on a sibling by path. That
     copies every member directory, because cargo loads all of them and a missing
     member fails before anything compiles.
+
+    `dockerfile` replaces the declarative layers entirely, for builds the layer
+    DSL cannot express -- private registries, extra system libraries, a
+    multi-stage build that keeps the toolchain out of the final image. See
+    `_DOCKERFILE_CONTRACT` for what such a Dockerfile has to do; the repository's
+    `docker/Dockerfile` is a worked example.
     """
     registry = registry if registry is not None else os.environ.get("RUST_IMAGE_REGISTRY")
+
+    if dockerfile is not None:
+        return _dockerfile_image(
+            dockerfile=dockerfile, binary=binary, registry=registry, workspace=workspace
+        )
     context_root = workspace if workspace is not None else crate_dir
     ignore_file = _ignore_file_for(context_root)
 

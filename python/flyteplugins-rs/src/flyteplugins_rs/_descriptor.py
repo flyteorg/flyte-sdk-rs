@@ -14,9 +14,11 @@ container (the Python-workflow path), where no cargo build exists:
 
 from __future__ import annotations
 
+import importlib.util
 import inspect
 import json
 import subprocess
+import sys
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -68,13 +70,57 @@ def _describe(binary_path: str) -> str:
     ).stdout
 
 
+def load_generated_descriptor(crate_dir: Path) -> dict[str, Any] | None:
+    """The descriptor bundled beside the task, or None if there is none yet.
+
+    Imported rather than read as text, and registered in ``sys.modules``, because
+    the default ``--copy-style loaded_modules`` bundles the modules a launch
+    *loaded*. A file merely opened and parsed would not travel into the
+    container, and the task would then have no interface there.
+
+    The module name is namespaced per crate: a Python workflow can pull in more
+    than one Rust task, and every crate calls its generated module the same
+    thing.
+    """
+    path = crate_dir / _GENERATED_MODULE
+    if not path.is_file():
+        return None
+
+    name = f"{__package__}._generated.{crate_dir.name.replace('-', '_')}"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return getattr(module, "DESCRIPTOR", None)
+
+
 def load_descriptor(
-    *, crate_dir: Path, search_from: Path, binary: str, fallback: dict[str, Any]
+    *,
+    crate_dir: Path,
+    search_from: Path,
+    binary: str,
+    fallback: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The worker's interface, from the binary when available else `fallback`."""
+    """The worker's interface: from the binary when one is built, else bundled.
+
+    `fallback` overrides the bundled `interface_gen.py`, which is otherwise found
+    automatically -- passing it is only necessary to declare an interface that is
+    not the one sitting beside the crate.
+    """
+    bundled = fallback if fallback is not None else load_generated_descriptor(crate_dir)
+
     binary_path = find_binary(search_from, binary)
     if binary_path is None:
-        return fallback
+        if bundled is None:
+            raise RuntimeError(
+                f"no built {binary!r} binary and no {_GENERATED_MODULE} beside "
+                f"{crate_dir} — run `cargo build --bin {binary}` once to generate it, "
+                f"and commit the result so the task can also be declared where no "
+                f"cargo build exists (inside a container)"
+            )
+        return bundled
 
     descriptor = json.loads(_describe(str(binary_path)))
     version = descriptor.get("flyte_interface_version")
@@ -84,7 +130,7 @@ def load_descriptor(
             f"{SUPPORTED_DESCRIPTOR_VERSION} — update flyteplugins-rs or rebuild the worker"
         )
 
-    if descriptor != fallback:
+    if descriptor != bundled:
         _write_generated_module(crate_dir, descriptor)
     return descriptor
 
