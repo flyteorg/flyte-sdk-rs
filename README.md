@@ -204,6 +204,11 @@ crate. A binary built with `#[union_reuse::main]` still runs as an ordinary
 one-shot container, so the two can be changed in either order, and dropping
 `reuse=` again needs no rebuild.
 
+The image is still declarative layers built by the remote builder — `reuse=` only
+adds the second name a pool replica is launched under, so this needs no docker on
+your machine. Worked example, including a non-reusable Python parent fanning out
+to a reusable Rust child: [`examples/reusable`](examples/reusable).
+
 ## Working on the SDK
 
 ```bash
@@ -244,6 +249,7 @@ the planned pure-Rust controller.
 | [`concurrent-traces`](examples/concurrent-traces) | Many traced steps at once, each recorded and replayed independently. |
 | [`retry-replay`](examples/retry-replay) | An expensive step replayed instead of re-run after a failure. |
 | [`human-approval`](examples/human-approval) | Pausing for a human decision with `flyte::condition`. |
+| [`reusable`](examples/reusable) | A warm container: one pool of replicas serving many actions, with a non-reusable Python parent fanning out to it. |
 
 ## Status
 

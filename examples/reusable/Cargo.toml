@@ -1,0 +1,16 @@
+[package]
+name = "reusable"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+# Written the way a user's crate would be: versions, not workspace inheritance
+# and not path dependencies, so this directory builds on its own -- which is what
+# the worker image does. See [patch.crates-io] in the root manifest.
+[dependencies]
+flyte = "0.1"
+# The one dependency reuse adds. It brings `#[union_reuse::main]`, which is the
+# only change to the task's own source. Released from unionai/union-reuse.
+union-reuse = "0.1"
+serde = { version = "1", features = ["derive"] }
