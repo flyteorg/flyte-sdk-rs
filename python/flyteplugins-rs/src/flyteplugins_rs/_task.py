@@ -93,7 +93,7 @@ def rust_task(
     The task's name and interface come from the binary's own descriptor, so the
     Rust signature is the only place they are written down. The descriptor is
     read from a local `cargo build` when there is one, and otherwise from the
-    generated ``interface_gen.py`` beside the crate, which is found
+    generated ``_generated_interface.py`` beside the crate, which is found
     automatically; ``fallback_descriptor`` only needs passing to override that.
 
     The worker image is built from declarative layers by default and named
