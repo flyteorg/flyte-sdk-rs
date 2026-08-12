@@ -78,8 +78,16 @@ def _warn_on_unignored_target(source: Path, ignore_file: Path) -> None:
     )
 
 
-_DOCKERFILE_CONTRACT = """A worker Dockerfile has to satisfy three things:
+_DOCKERFILE_CONTRACT = """A worker Dockerfile has to satisfy three things (four with reuse):
 
+0. **With `reuse=`, `unionai-actor-bridge` resolves on PATH.** A reusable task's
+   pod never runs the task's own args: the fasttask plugin overwrites them with
+   `unionai-actor-bridge --queue-id ... --worker-id ...`. A binary built with
+   `#[union_reuse::main]` handles that argv itself, so the Dockerfile only has to
+   give it the name:
+   `RUN ln -sf /usr/local/bin/<binary> /usr/local/bin/unionai-actor-bridge`.
+   Without it the replica exits before it can report why, and the pool shows up
+   as CrashLoopBackOff with no task ever running.
 1. **The binary lands at `/usr/local/bin/<binary>`.** The task passes that path
    as `args[0]`, so it is the one hard-coded contract between image and task.
 2. **The image can run it.** `flyte_core` enables `pyo3/auto-initialize`, so the
@@ -120,10 +128,21 @@ def _dockerfile_image(
     registry: str | None,
     workspace: Path | None,
     image_name: str | None,
+    reuse: bool,
 ) -> flyte.Image:
     """A worker image built from a user-supplied Dockerfile."""
     if not dockerfile.is_file():
         raise FileNotFoundError(f"dockerfile {dockerfile} does not exist")
+    if reuse and "unionai-actor-bridge" not in dockerfile.read_text():
+        # Cheap and only a heuristic, but the failure it prevents is expensive:
+        # a pool of replicas that exit instantly, with no task log to explain it.
+        print(
+            f"warning: {dockerfile} never mentions unionai-actor-bridge, but this task "
+            f"declares reuse=. The fasttask plugin launches replicas with that command, "
+            f"so the image must provide it:\n"
+            f"    RUN ln -sf /usr/local/bin/{binary} /usr/local/bin/unionai-actor-bridge",
+            file=sys.stderr,
+        )
     if registry is None:
         raise ValueError(
             "a registry is required to build from a Dockerfile: pass registry=, or set "
@@ -146,6 +165,27 @@ def _dockerfile_image(
     )
 
 
+def _install_commands(build_dir: str, binary: str, reuse: bool) -> list[str]:
+    """Build the worker and put it where the task expects to find it.
+
+    With ``reuse``, the binary gets a second name. A reusable task's pod is not
+    launched with the task's own args at all: the fasttask plugin overwrites them
+    with ``unionai-actor-bridge --queue-id … --worker-id …``, so that name has to
+    resolve to something on PATH or the replica crashloops before it can say why.
+    A symlink is enough because the binary decides what to do from argv, and the
+    `union-reuse` crate teaches it to recognise a pool launch.
+    """
+    # One shell, so `cd` carries and the paths after it stay relative.
+    steps = [
+        f"cd {build_dir}",
+        f"cargo build --release --bin {binary}",
+        f"install target/release/{binary} /usr/local/bin/{binary}",
+    ]
+    if reuse:
+        steps.append(f"ln -sf /usr/local/bin/{binary} /usr/local/bin/unionai-actor-bridge")
+    return [" && ".join(steps)]
+
+
 def rust_worker_image(
     *,
     crate_dir: Path,
@@ -155,6 +195,7 @@ def rust_worker_image(
     image_name: str | None = None,
     rust_base: str = "rust:1-bookworm",
     registry: str | None = None,
+    reuse: bool = False,
 ) -> flyte.Image:
     """An image that compiles `binary` from source and installs it in /usr/local/bin.
 
@@ -176,6 +217,10 @@ def rust_worker_image(
     multi-stage build that keeps the toolchain out of the final image. See
     `_DOCKERFILE_CONTRACT` for what such a Dockerfile has to do; the repository's
     `docker/Dockerfile` is a worked example.
+
+    `reuse` adds one step to the layered build: a second name for the binary, so
+    the pod the fasttask plugin launches can find it. A Dockerfile has to add
+    that line itself -- see item 0 of `_DOCKERFILE_CONTRACT`.
     """
     registry = registry if registry is not None else os.environ.get("RUST_IMAGE_REGISTRY")
 
@@ -186,6 +231,7 @@ def rust_worker_image(
             registry=registry,
             workspace=workspace,
             image_name=image_name,
+            reuse=reuse,
         )
     context_root = workspace if workspace is not None else crate_dir
     ignore_file = _ignore_file_for(context_root)
@@ -210,12 +256,7 @@ def rust_worker_image(
         # Published-crate shape: the user's crate is the entire context.
         _warn_on_unignored_target(crate_dir, ignore_file)
         return image.with_source_folder(crate_dir, "./app").with_commands(
-            [
-                (
-                    f"cd app && cargo build --release --bin {binary}"
-                    f" && install target/release/{binary} /usr/local/bin/{binary}"
-                )
-            ]
+            _install_commands("app", binary, reuse)
         )
 
     # Path-dependency shape: the whole workspace's Rust sources.
@@ -233,11 +274,4 @@ def rust_worker_image(
             _warn_on_unignored_target(workspace / member_dir, ignore_file)
             image = image.with_source_folder(workspace / member_dir, f"./ws/{member_dir}")
 
-    return image.with_commands(
-        [
-            (
-                f"cd ws && cargo build --release --bin {binary}"
-                f" && install target/release/{binary} /usr/local/bin/{binary}"
-            )
-        ]
-    )
+    return image.with_commands(_install_commands("ws", binary, reuse))

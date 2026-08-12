@@ -40,7 +40,7 @@ pub fn run<F: Future>(fut: F) -> F::Output {
 }
 
 #[derive(Default, Debug)]
-struct WorkerConfig {
+pub struct WorkerConfig {
     inputs_uri: Option<String>,
     output_path: Option<String>,
     run_base_dir: Option<String>,
@@ -61,7 +61,7 @@ fn real_value(v: String) -> Option<String> {
     }
 }
 
-fn parse_args(args: impl Iterator<Item = String>) -> WorkerConfig {
+pub fn parse_args(args: impl Iterator<Item = String>) -> WorkerConfig {
     let mut cfg = WorkerConfig::default();
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
@@ -98,15 +98,32 @@ fn truthy(v: &str) -> bool {
     matches!(v.to_lowercase().as_str(), "1" | "true" | "t" | "yes")
 }
 
-struct ResolvedConfig {
-    inputs_uri: Option<String>,
-    output_path: String,
-    run_base_dir: String,
-    action_name: String,
-    run_id: RunIdentifier,
+pub struct ResolvedConfig {
+    pub inputs_uri: Option<String>,
+    pub output_path: String,
+    pub run_base_dir: String,
+    pub action_name: String,
+    pub run_id: RunIdentifier,
 }
 
-fn resolve_config(cfg: WorkerConfig) -> Result<ResolvedConfig, Error> {
+/// Fill in the args the backend did not substitute, from process environment.
+///
+/// The one-shot container's identity arrives this way: the backend injects
+/// `ACTION_NAME` / `RUN_NAME` / `_U_RUN_BASE` etc. into the pod.
+pub fn resolve_config(cfg: WorkerConfig) -> Result<ResolvedConfig, Error> {
+    resolve_config_with_env(cfg, &|key| env_nonempty(key))
+}
+
+/// [`resolve_config`], but reading identity from `env` instead of the process.
+///
+/// A reusable container cannot use process env for this: the pod's variables are
+/// fixed when the replica starts, so they name whichever action happened to be
+/// first. Per-action identity instead arrives in-band with each assignment, and
+/// this is where it enters.
+pub fn resolve_config_with_env(
+    cfg: WorkerConfig,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Result<ResolvedConfig, Error> {
     let require = |value: Option<String>, flag: &str, env: &str| {
         value.ok_or_else(|| {
             Error::System(format!(
@@ -115,30 +132,36 @@ fn resolve_config(cfg: WorkerConfig) -> Result<ResolvedConfig, Error> {
         })
     };
     let action_name = require(
-        cfg.action_name.or_else(|| env_nonempty("ACTION_NAME")),
+        cfg.action_name.or_else(|| env("ACTION_NAME")),
         "--name",
         "ACTION_NAME",
     )?;
     let run_name = require(
-        cfg.run_name.or_else(|| env_nonempty("RUN_NAME")),
+        cfg.run_name.or_else(|| env("RUN_NAME")),
         "--run-name",
         "RUN_NAME",
     )?;
     let project = require(
         cfg.project
-            .or_else(|| env_nonempty("FLYTE_INTERNAL_EXECUTION_PROJECT")),
+            .or_else(|| env("FLYTE_INTERNAL_EXECUTION_PROJECT"))
+            // `GetExecutionEnvVars` emits both the execution's and the task
+            // definition's project/domain; the reusable path takes whichever it
+            // is given. worker-v2's executor reads only the TASK_ pair, so keep
+            // it as a fallback even though EXECUTION_ normally wins here.
+            .or_else(|| env("FLYTE_INTERNAL_TASK_PROJECT")),
         "--project",
         "FLYTE_INTERNAL_EXECUTION_PROJECT",
     )?;
     let domain = require(
         cfg.domain
-            .or_else(|| env_nonempty("FLYTE_INTERNAL_EXECUTION_DOMAIN")),
+            .or_else(|| env("FLYTE_INTERNAL_EXECUTION_DOMAIN"))
+            .or_else(|| env("FLYTE_INTERNAL_TASK_DOMAIN")),
         "--domain",
         "FLYTE_INTERNAL_EXECUTION_DOMAIN",
     )?;
-    let org = cfg.org.or_else(|| env_nonempty("_U_ORG_NAME")).unwrap_or_default();
+    let org = cfg.org.or_else(|| env("_U_ORG_NAME")).unwrap_or_default();
     let run_base_dir = require(
-        cfg.run_base_dir.or_else(|| env_nonempty("_U_RUN_BASE")),
+        cfg.run_base_dir.or_else(|| env("_U_RUN_BASE")),
         "--run-base-dir",
         "_U_RUN_BASE",
     )?;
@@ -159,7 +182,13 @@ fn resolve_config(cfg: WorkerConfig) -> Result<ResolvedConfig, Error> {
     })
 }
 
-fn build_controller(run_id: RunIdentifier) -> Result<Controller, Error> {
+/// Build the controller from process environment.
+///
+/// Must be called from a plain (non-async) thread: the underlying constructor
+/// blocks on the shared runtime. A reusable container calls this once at startup
+/// and then derives per-run views with [`Controller::for_run`] -- the endpoint
+/// and credentials are pod-level and never vary per action.
+pub fn build_controller(run_id: RunIdentifier) -> Result<Controller, Error> {
     if env_nonempty("_UNION_EAGER_API_KEY").is_some() {
         return Controller::with_auth(run_id, 10);
     }
@@ -197,7 +226,18 @@ fn error_document(err: &Error) -> ErrorDocument {
     }
 }
 
-async fn execute(entry: &TaskEntry, state: &RuntimeState, inputs_uri: Option<&str>) {
+/// Run one action to completion: fetch inputs, run the task, upload
+/// `outputs.pb` or `error.pb`, finalize.
+///
+/// Returns the task's own result so a caller that has to report a phase
+/// elsewhere -- the reusable container, which answers the fasttask plugin over
+/// its heartbeat -- can tell success from failure. The one-shot worker ignores
+/// it, because there the artifacts *are* the report.
+pub async fn execute(
+    entry: &TaskEntry,
+    state: &RuntimeState,
+    inputs_uri: Option<&str>,
+) -> Result<(), Error> {
     // Prewarm the informer so its watch stream has the whole startup window to
     // sync trace actions recorded by a previous attempt (cold-cache replay).
     let _ = state
@@ -225,7 +265,7 @@ async fn execute(entry: &TaskEntry, state: &RuntimeState, inputs_uri: Option<&st
     }
     .await;
 
-    match result {
+    let outcome = match result {
         Ok(outputs) => {
             let uri = Storage::join(&state.output_path, "outputs.pb");
             let data = bytes::Bytes::from(outputs.encode_to_vec());
@@ -233,6 +273,7 @@ async fn execute(entry: &TaskEntry, state: &RuntimeState, inputs_uri: Option<&st
                 Ok(()) => tracing::info!(task = entry.name, "task succeeded, outputs uploaded"),
                 Err(e) => tracing::error!(task = entry.name, "outputs upload failed: {e}"),
             }
+            Ok(())
         }
         Err(err) => {
             tracing::error!(task = entry.name, "task failed: {err}");
@@ -241,25 +282,20 @@ async fn execute(entry: &TaskEntry, state: &RuntimeState, inputs_uri: Option<&st
             if let Err(e) = state.storage.put(&uri, data).await {
                 tracing::error!(task = entry.name, "error upload failed: {e}");
             }
+            Err(err)
         }
-    }
+    };
 
     state.controller.finalize(&state.action_name).await;
+    outcome
 }
 
-/// The worker process entrypoint: call from `main` with the entry generated by
-/// `#[flyte::task]`.
-pub fn worker_main(entry: TaskEntry) -> ExitCode {
-    // Answered before anything else touches env, the controller, or logging, so
-    // `docker run --rm <image> describe-interface` works with no setup at all.
-    //
-    // Safe to key off argv[1]: the backend's first token is always an action
-    // name (`a0`, or a base36 hash) and can never be a hyphenated literal.
-    if std::env::args().nth(1).as_deref() == Some("describe-interface") {
-        println!("{}", (entry.interface)().to_json(entry.name));
-        return ExitCode::SUCCESS;
-    }
-
+/// Logging and the process-wide environment both entrypoints depend on.
+///
+/// Everything here is genuinely process-scoped, which is why it is separated out:
+/// a reusable container runs many actions concurrently, and `set_var` is unsound
+/// once a second thread exists. Call once, before any runtime starts.
+pub fn init_process_env() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -284,6 +320,28 @@ pub fn worker_main(entry: TaskEntry) -> ExitCode {
     if env_nonempty("_F_TRACE_COMPLETION_TIMEOUT").is_none() {
         std::env::set_var("_F_TRACE_COMPLETION_TIMEOUT", "5");
     }
+}
+
+/// True when argv asks for the interface descriptor rather than a run.
+///
+/// Answered before anything else touches env, the controller, or logging, so
+/// `docker run --rm <image> describe-interface` works with no setup at all.
+///
+/// Safe to key off argv[1]: the backend's first token is always an action name
+/// (`a0`, or a base36 hash) and can never be a hyphenated literal.
+pub fn wants_interface() -> bool {
+    std::env::args().nth(1).as_deref() == Some("describe-interface")
+}
+
+/// The worker process entrypoint: call from `main` with the entry generated by
+/// `#[flyte::task]`.
+pub fn worker_main(entry: TaskEntry) -> ExitCode {
+    if wants_interface() {
+        println!("{}", (entry.interface)().to_json(entry.name));
+        return ExitCode::SUCCESS;
+    }
+
+    init_process_env();
 
     let cfg = match resolve_config(parse_args(std::env::args().skip(1))) {
         Ok(cfg) => cfg,

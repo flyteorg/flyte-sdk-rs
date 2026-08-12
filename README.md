@@ -177,6 +177,33 @@ flyte run workflow.py pipeline --x 21 --label demo
 `depends_on=[rust_env]` is required — it is what carries the Rust task's image
 into the deployment plan.
 
+## Reusable (warm) containers
+
+By default every action gets its own pod, and pays for scheduling, image pull and
+process start before your code runs. [`union-reuse`](https://github.com/unionai/union-reuse)
+replaces that with a pool of replicas the backend keeps alive and streams actions
+to. It costs one dependency and one changed attribute:
+
+```rust
+#[union_reuse::main]   // was #[flyte::main]
+#[flyte::task]
+async fn warm(x: i64) -> Result<String, flyte::Error> { ... }
+```
+
+```python
+warm, rust_env = rs.rust_task(
+    crate_dir=Path(__file__).parent,
+    binary="reusable",
+    reuse=flyte.ReusePolicy(replicas=(1, 3), idle_ttl=300, concurrency=4),
+)
+```
+
+The launcher half — `reuse=` and the image changes it implies — ships here in
+[`flyteplugins-rs`](python/flyteplugins-rs); the worker half is the `union-reuse`
+crate. A binary built with `#[union_reuse::main]` still runs as an ordinary
+one-shot container, so the two can be changed in either order, and dropping
+`reuse=` again needs no rebuild.
+
 ## Working on the SDK
 
 ```bash
@@ -234,7 +261,9 @@ which is merged and is the `flyte_core` rev pinned here.
 
 **Packaging.** Both halves are released: the crate as
 [`flyte`](https://crates.io/crates/flyte) on crates.io, the launcher as
-[`flyteplugins-rs`](https://pypi.org/project/flyteplugins-rs/) on PyPI.
+[`flyteplugins-rs`](https://pypi.org/project/flyteplugins-rs/) on PyPI. Reusable
+containers are a separate crate in a separate repo,
+[`union-reuse`](https://github.com/unionai/union-reuse).
 
 The worker still embeds a Python interpreter — the transport crate
 [`flyte_core`](https://crates.io/crates/flyte_core) enables `pyo3/auto-initialize`

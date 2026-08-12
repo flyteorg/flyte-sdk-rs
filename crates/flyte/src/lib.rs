@@ -22,9 +22,13 @@ pub mod storage;
 pub mod trace;
 #[doc(hidden)]
 pub mod types;
-mod worker;
+/// The container entrypoint. Public because `union-reuse` reuses its parts to
+/// run many actions in one process; `#[flyte::main]` is the supported way in.
+#[doc(hidden)]
+pub mod worker;
 
 pub use condition::{condition, Condition, ConditionBuilder, ConditionValue};
+pub use context::spawn;
 pub use error::{ConditionOutcome, Error};
 pub use flyte_macros::{main, task, trace, FlyteStruct};
 pub use interface::{TaskInterface, TaskVariable};
