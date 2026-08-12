@@ -47,7 +47,7 @@ async def pipeline(x: int) -> str:
 ## What it does
 
 - **Interface** — runs `<binary> describe-interface` when a local build exists,
-  and refreshes the generated `interface_gen.py` from it. Inside a container
+  and refreshes the generated `_generated_interface.py` from it. Inside a container
   (no cargo build) the generated module is used instead.
 - **Image** — declares the worker image as `flyte.Image` layers, so the
   **remote** image builder can compile it (no Dockerfile, no local docker). No

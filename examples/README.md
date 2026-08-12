@@ -39,7 +39,7 @@ cargo run -p <example> -- describe-interface
 | `src/main.rs` | The task. `#[flyte::main]` makes the crate the worker entrypoint — or `#[union_reuse::main]`, which additionally lets the binary serve a pool of actions. |
 | `Cargo.toml` | A normal crate manifest depending on `flyte = "0.1"` from crates.io. |
 | `task.py` | Declares the task to Flyte: reads the interface from the binary and builds the worker image. A handful of lines via [`flyteplugins-rs`](../python/flyteplugins-rs). |
-| `interface_gen.py` | Generated from `describe-interface`; the bundled interface used inside a container, where no cargo build exists. Do not edit. |
+| `_generated_interface.py` | Written by the launcher from `describe-interface`. Safe to delete — any launch with a built binary writes it back. Committed because a container has no cargo build to read the interface from. |
 | `.dockerignore` | Keeps `target/`, Python and docs out of the worker image's build context — and out of the image tag, so launcher edits do not trigger rebuilds. |
 | `Dockerfile` | Only in [`custom-image`](custom-image). The default is declarative layers, which the remote builder can compile without docker. |
 

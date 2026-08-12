@@ -1,0 +1,6 @@
+# Applies outside python/flyteplugins-rs, which has its own [tool.ruff] and keeps it.
+#
+# The launcher writes `_generated_interface.py` in a single-line form and rewrites
+# it on any launch where the built binary disagrees. Formatting it here would
+# churn forever: ruff reflows it, the next launch flattens it back.
+extend-exclude = ["**/_generated_interface.py"]
