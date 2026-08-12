@@ -1744,6 +1744,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "reusable"
+version = "0.1.0"
+dependencies = [
+ "flyte",
+ "serde",
+ "union-reuse",
+]
+
+[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2260,6 +2269,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "libc",
  "pin-project-lite",
  "tokio",
@@ -2465,6 +2475,35 @@ name = "unindent"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7264e107f553ccae879d21fbea1d6724ac785e8c3bfc762137959b5802826ef3"
+
+[[package]]
+name = "union-reuse"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec179951cc7b5c8808e9ec548107afa2c470ee75d07e4cc244184f4e300304ee"
+dependencies = [
+ "async-stream",
+ "flyte",
+ "futures",
+ "prost 0.13.5",
+ "prost-types 0.13.5",
+ "tokio",
+ "tokio-util",
+ "tonic",
+ "tracing",
+ "union-reuse-macros",
+]
+
+[[package]]
+name = "union-reuse-macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adb1ff0b18bd3ac66b1bfa5fa54c792d6777567ce84aa8e37b4ba81bebebb067"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "untrusted"
