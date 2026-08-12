@@ -45,6 +45,9 @@ pub struct ConditionRecord {
     pub run_output_base: String,
 }
 
+/// Cloning shares the connection, worker pool and informer cache; only the run
+/// binding is per-clone. See [`Controller::for_run`].
+#[derive(Clone)]
 pub struct Controller {
     inner: Arc<CoreBaseController>,
     run_id: RunIdentifier,
@@ -72,6 +75,27 @@ impl Controller {
 
     pub fn run_id(&self) -> &RunIdentifier {
         &self.run_id
+    }
+
+    /// A view of this controller bound to a different run, sharing the same
+    /// connection, worker pool and informer cache.
+    ///
+    /// `run_id` is only ever used to build `ActionIdentifier`s and to key the
+    /// informer cache -- which `flyte_core` names `"{run_name}.{parent_action}"`
+    /// -- so one `CoreBaseController` serves many runs. That is what lets a
+    /// reusable container pay for the connection once and then handle whatever
+    /// runs the backend assigns it. (Org/project/domain are absent from that key
+    /// but fixed for the lifetime of a reusable environment: they are part of
+    /// the fasttask queue id, so replicas only ever see one of them.)
+    ///
+    /// Note that [`Self::watch_for_errors`] belongs to the underlying
+    /// controller, not to the view -- call it once, on the controller the pool
+    /// built, not per run.
+    pub fn for_run(&self, run_id: RunIdentifier) -> Self {
+        Controller {
+            inner: self.inner.clone(),
+            run_id,
+        }
     }
 
     fn action_id(&self, action_name: &str) -> ActionIdentifier {

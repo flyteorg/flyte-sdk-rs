@@ -12,6 +12,8 @@ from flyte.models import SerializationContext
 
 from ._descriptor import load_descriptor, native_interface
 from ._image import rust_worker_image
+from ._reuse import ACTOR_TASK_TYPE, actor_custom_config
+from ._reuse import validate as validate_reuse
 
 # Not "python" (nothing python runs here) and never "raw-container" (that one
 # injects the copilot data sidecar). The leaseworker resolves an unregistered
@@ -29,6 +31,15 @@ class RustWorkerTask(TaskTemplate):
         # Only reached under mode="local" / `flyte run --local`, which would mean
         # running the container ourselves (see flyte.extras.ContainerTask).
         raise NotImplementedError("remote-only task; --local is not supported")
+
+    def custom_config(self, sctx: SerializationContext) -> dict[str, Any]:
+        # Only reusable tasks carry a `custom`, and for them it is load-bearing:
+        # the fasttask plugin reads the environment's shape (replicas, TTLs,
+        # parallelism, identity) out of exactly this blob. See `_reuse` for why
+        # we build it here rather than letting the SDK do it.
+        if self.reusable is None:
+            return {}
+        return actor_custom_config(self, sctx, self.reusable)
 
     def container_args(self, sctx: SerializationContext) -> list[str]:
         # Mirrors flyte._task.AsyncFunctionTaskTemplate.container_args, trimmed to
@@ -74,6 +85,7 @@ def rust_task(
     image_name: str | None = None,
     env_name: str | None = None,
     image: flyte.Image | None = None,
+    reuse: flyte.ReusePolicy | None = None,
     **task_kwargs: Any,
 ) -> tuple[RustWorkerTask, flyte.TaskEnvironment]:
     """Declare a Rust worker as a Flyte task, plus the environment holding it.
@@ -90,6 +102,14 @@ def rust_task(
     to supply your own build instead -- see :func:`rust_worker_image` for the
     contract it has to meet -- or ``image`` for a fully custom ``flyte.Image``.
 
+    Pass ``reuse`` to run the task in a **warm container**: the backend keeps a
+    pool of replicas alive and streams actions to them instead of scheduling a
+    pod each time, which trades pod startup for a process that outlives any one
+    action. This needs the Rust side to opt in too — the crate depends on
+    ``union-reuse`` and the task fn carries ``#[union_reuse::main]`` instead of
+    ``#[flyte::main]``. A binary built that way still runs fine without
+    ``reuse``, so the two halves can be changed in either order.
+
     Extra keyword arguments (``retries``, ``cache``, ``resources``, ``timeout``,
     ...) pass straight through to the underlying task template.
 
@@ -97,6 +117,9 @@ def rust_task(
     calling this task needs ``depends_on=[env]`` so the worker image is carried
     into the deployment plan.
     """
+    if reuse is not None:
+        validate_reuse(reuse)
+
     descriptor = load_descriptor(
         # Where to start looking for the built binary. `find_binary` walks up
         # from here, so a workspace member resolves to the workspace's target/
@@ -110,7 +133,10 @@ def rust_task(
     task = RustWorkerTask(
         name=descriptor["task"],
         binary=binary,
-        task_type=RUST_TASK_TYPE,
+        # The task type is what routes a task to a backend plugin, so reuse has
+        # to change it: `rust-task` lands on the default pod plugin (one pod per
+        # action), `actor` on the fasttask plugin that owns replica pools.
+        task_type=ACTOR_TASK_TYPE if reuse is not None else RUST_TASK_TYPE,
         image=image
         or rust_worker_image(
             crate_dir=crate_dir,
@@ -118,9 +144,16 @@ def rust_task(
             workspace=workspace,
             dockerfile=dockerfile,
             image_name=image_name,
+            reuse=reuse is not None,
         ),
         interface=native_interface(descriptor),
+        reusable=reuse,
         **task_kwargs,
     )
     env = flyte.TaskEnvironment.from_task(env_name or f"{binary.replace('-', '_')}_env", task)
+    # `from_task` has no `reusable` parameter, and the field is what the SDK reads
+    # off the *task* when serializing. Setting it on the env too keeps the pair
+    # consistent for anything that inspects the environment instead.
+    if reuse is not None:
+        object.__setattr__(env, "reusable", reuse)
     return task, env

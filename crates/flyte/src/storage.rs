@@ -17,8 +17,15 @@ use crate::error::Error;
 /// Matches Python's MAX_INLINE_IO_BYTES.
 pub const MAX_IO_BYTES: usize = 10 * 1024 * 1024;
 
+/// Object storage, with one lazily-built client cached per URI scheme.
+///
+/// Cloning shares that cache rather than copying it, which is what lets a
+/// reusable container build its S3/GCS/Azure clients once and hand the same ones
+/// to every action it runs — credential resolution is not cheap, and paying it
+/// per action would undo much of the point of a warm container.
+#[derive(Clone)]
 pub struct Storage {
-    stores: std::sync::Mutex<HashMap<String, Arc<dyn ObjectStore>>>,
+    stores: Arc<std::sync::Mutex<HashMap<String, Arc<dyn ObjectStore>>>>,
 }
 
 impl Default for Storage {
@@ -30,7 +37,7 @@ impl Default for Storage {
 impl Storage {
     pub fn new() -> Self {
         Storage {
-            stores: std::sync::Mutex::new(HashMap::new()),
+            stores: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 

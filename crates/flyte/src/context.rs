@@ -1,7 +1,19 @@
-//! Process-wide runtime state for the single running task action, plus the
-//! in-trace flag used to make nested traced fns run inline.
+//! Runtime state for the running task action, plus the in-trace flag used to
+//! make nested traced fns run inline.
+//!
+//! There are two ways state gets here, because there are two entrypoints:
+//!
+//! - [`install`] sets it process-wide, for the one-shot container that runs
+//!   exactly one action and exits (`worker_main`).
+//! - [`scope`] sets it per tokio task, for a reusable container running several
+//!   actions at once (`union-reuse`). Concurrent actions must not see each
+//!   other's `action_name`/`run_base_dir`, so a process-global cannot serve them.
+//!
+//! [`current`] prefers the task-local and falls back to the global, so nothing
+//! about the one-shot path changes.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::controller::Controller;
@@ -87,11 +99,27 @@ pub fn install(state: RuntimeState) -> Arc<RuntimeState> {
 }
 
 /// The current task context, if running as a remote worker.
+///
+/// Task-local first: in a reusable container the global is never set, and even
+/// if it were, the task-local is the one that names *this* action.
 pub fn current() -> Option<Arc<RuntimeState>> {
-    STATE.get().cloned()
+    CURRENT
+        .try_with(Arc::clone)
+        .ok()
+        .or_else(|| STATE.get().cloned())
+}
+
+/// Run `fut` with `state` as the current context. The reusable-container
+/// entrypoint wraps each assigned action in this.
+pub async fn scope<F: Future>(state: Arc<RuntimeState>, fut: F) -> F::Output {
+    CURRENT.scope(state, fut).await
 }
 
 tokio::task_local! {
+    /// The action this tokio task belongs to. Set by [`scope`]; absent in the
+    /// one-shot worker, which uses the process-global instead.
+    pub static CURRENT: Arc<RuntimeState>;
+
     /// True while a traced fn body is executing; nested traced fns then run
     /// inline instead of recording their own actions. Note: task-local, so the
     /// flag does not cross `tokio::spawn` boundaries.
@@ -100,6 +128,32 @@ tokio::task_local! {
 
 pub fn in_trace() -> bool {
     IN_TRACE.try_with(|v| *v).unwrap_or(false)
+}
+
+/// `tokio::spawn` that carries the flyte context across the task boundary.
+///
+/// Both [`CURRENT`] and [`IN_TRACE`] are task-locals, so a bare `tokio::spawn`
+/// inside a task body loses them: traced fns in the spawned future would see no
+/// runtime state and silently run un-recorded, and a step spawned from inside a
+/// traced body would start recording actions of its own instead of running
+/// inline. Use this instead. Same signature as `tokio::spawn`.
+///
+/// Same-task combinators (`join!`, `try_join_all`, `select!`) never had this
+/// problem and need nothing special.
+pub fn spawn<F>(fut: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    let state = CURRENT.try_with(Arc::clone).ok();
+    let tracing = in_trace();
+    tokio::spawn(async move {
+        let fut = IN_TRACE.scope(tracing, fut);
+        match state {
+            Some(state) => CURRENT.scope(state, fut).await,
+            None => fut.await,
+        }
+    })
 }
 
 #[cfg(test)]
