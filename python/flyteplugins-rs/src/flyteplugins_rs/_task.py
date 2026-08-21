@@ -86,6 +86,7 @@ def rust_task(
     env_name: str | None = None,
     image: flyte.Image | None = None,
     reuse: flyte.ReusePolicy | None = None,
+    platform: str | tuple[str, ...] | None = None,
     **task_kwargs: Any,
 ) -> tuple[RustWorkerTask, flyte.TaskEnvironment]:
     """Declare a Rust worker as a Flyte task, plus the environment holding it.
@@ -145,6 +146,7 @@ def rust_task(
             dockerfile=dockerfile,
             image_name=image_name,
             reuse=reuse is not None,
+            platform=platform
         ),
         interface=native_interface(descriptor),
         reusable=reuse,
