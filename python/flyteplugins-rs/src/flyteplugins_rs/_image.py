@@ -121,6 +121,27 @@ successful build and push). Either make the package public once, or point
 """
 
 
+def _resolve_platform(
+    platform: str | tuple[str, ...] | None,
+) -> tuple[str, ...] | None:
+    """The architectures to build for, or None to keep flyte.Image's default.
+
+    Resolution order: explicit ``platform=`` argument, then the
+    ``RUST_IMAGE_PLATFORM`` environment variable (comma-separated, e.g.
+    ``linux/arm64`` or ``linux/amd64,linux/arm64``). The env var is what makes
+    the platform switchable per invocation — the Image default is linux/amd64,
+    and a Mac driving an arm64 cluster (or vice versa) needs to change it
+    without editing the launcher.
+    """
+    if platform is None:
+        platform = os.environ.get("RUST_IMAGE_PLATFORM")
+    if platform is None:
+        return None
+    if isinstance(platform, str):
+        platform = tuple(p.strip() for p in platform.split(",") if p.strip())
+    return platform or None
+
+
 def _dockerfile_image(
     *,
     dockerfile: Path,
@@ -129,6 +150,7 @@ def _dockerfile_image(
     workspace: Path | None,
     image_name: str | None,
     reuse: bool,
+    platform: tuple[str, ...] | None,
 ) -> flyte.Image:
     """A worker image built from a user-supplied Dockerfile."""
     if not dockerfile.is_file():
@@ -162,6 +184,7 @@ def _dockerfile_image(
         file=dockerfile.resolve(),
         registry=registry,
         name=image_name or f"{binary}-worker",
+        platform=platform,
     )
 
 
@@ -196,6 +219,7 @@ def rust_worker_image(
     rust_base: str = "rust:1-bookworm",
     registry: str | None = None,
     reuse: bool = False,
+    platform: str | tuple[str, ...] | None = None,
 ) -> flyte.Image:
     """An image that compiles `binary` from source and installs it in /usr/local/bin.
 
@@ -221,8 +245,18 @@ def rust_worker_image(
     `reuse` adds one step to the layered build: a second name for the binary, so
     the pod the fasttask plugin launches can find it. A Dockerfile has to add
     that line itself -- see item 0 of `_DOCKERFILE_CONTRACT`.
+
+    `platform` picks the architecture(s) the local docker builder targets --
+    e.g. ``"linux/arm64"``, or ``("linux/amd64", "linux/arm64")`` for
+    multi-arch. Unset, the ``RUST_IMAGE_PLATFORM`` env var applies
+    (comma-separated), and with neither the flyte.Image default (linux/amd64)
+    stands. A mismatch is worth catching early: an amd64-only image on an arm64
+    node fails at pod start with `exec format error`, and cross-building Rust
+    under qemu is painfully slow -- build natively for the cluster you run on.
+    The remote builder ignores platform entirely (see module docstring).
     """
     registry = registry if registry is not None else os.environ.get("RUST_IMAGE_REGISTRY")
+    resolved_platform = _resolve_platform(platform)
 
     if dockerfile is not None:
         return _dockerfile_image(
@@ -232,13 +266,19 @@ def rust_worker_image(
             workspace=workspace,
             image_name=image_name,
             reuse=reuse,
+            platform=resolved_platform,
         )
     context_root = workspace if workspace is not None else crate_dir
     ignore_file = _ignore_file_for(context_root)
 
     image = (
         flyte.Image.from_base(rust_base)
-        .clone(name=image_name or f"{binary}-worker", registry=registry, extendable=True)
+        .clone(
+            name=image_name or f"{binary}-worker",
+            registry=registry,
+            extendable=True,
+            platform=resolved_platform,
+        )
         # Replaces the SDK's default ignore set, which does not know about
         # cargo's target/ — without this the upload context is gigabytes.
         .with_dockerignore(ignore_file)

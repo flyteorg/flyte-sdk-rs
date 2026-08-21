@@ -124,23 +124,24 @@ pub fn resolve_config_with_env(
     cfg: WorkerConfig,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Result<ResolvedConfig, Error> {
-    let require = |value: Option<String>, flag: &str, env: &str| {
-        value.ok_or_else(|| {
-            Error::System(format!(
-                "missing required configuration: pass {flag} or set {env}"
-            ))
-        })
+    // Collect every gap before failing: a partially configured container (one
+    // env var lost) and a bare `./binary` from a shell (all of them absent)
+    // look identical when only the first missing key is reported.
+    let mut missing: Vec<&str> = Vec::new();
+    let mut require = |value: Option<String>, what: &'static str| {
+        if value.is_none() {
+            missing.push(what);
+        }
+        value
     };
     let action_name = require(
         cfg.action_name.or_else(|| env("ACTION_NAME")),
-        "--name",
-        "ACTION_NAME",
-    )?;
+        "ACTION_NAME (or --name)",
+    );
     let run_name = require(
         cfg.run_name.or_else(|| env("RUN_NAME")),
-        "--run-name",
-        "RUN_NAME",
-    )?;
+        "RUN_NAME (or --run-name)",
+    );
     let project = require(
         cfg.project
             .or_else(|| env("FLYTE_INTERNAL_EXECUTION_PROJECT"))
@@ -149,22 +150,32 @@ pub fn resolve_config_with_env(
             // is given. worker-v2's executor reads only the TASK_ pair, so keep
             // it as a fallback even though EXECUTION_ normally wins here.
             .or_else(|| env("FLYTE_INTERNAL_TASK_PROJECT")),
-        "--project",
-        "FLYTE_INTERNAL_EXECUTION_PROJECT",
-    )?;
+        "FLYTE_INTERNAL_EXECUTION_PROJECT (or --project)",
+    );
     let domain = require(
         cfg.domain
             .or_else(|| env("FLYTE_INTERNAL_EXECUTION_DOMAIN"))
             .or_else(|| env("FLYTE_INTERNAL_TASK_DOMAIN")),
-        "--domain",
-        "FLYTE_INTERNAL_EXECUTION_DOMAIN",
-    )?;
+        "FLYTE_INTERNAL_EXECUTION_DOMAIN (or --domain)",
+    );
     let org = cfg.org.or_else(|| env("_U_ORG_NAME")).unwrap_or_default();
     let run_base_dir = require(
         cfg.run_base_dir.or_else(|| env("_U_RUN_BASE")),
-        "--run-base-dir",
-        "_U_RUN_BASE",
-    )?;
+        "_U_RUN_BASE (or --run-base-dir)",
+    );
+    if !missing.is_empty() {
+        return Err(Error::System(format!(
+            "missing required configuration: {}",
+            missing.join(", ")
+        )));
+    }
+    let (action_name, run_name, project, domain, run_base_dir) = (
+        action_name.unwrap(),
+        run_name.unwrap(),
+        project.unwrap(),
+        domain.unwrap(),
+        run_base_dir.unwrap(),
+    );
     let output_path = cfg
         .output_path
         .unwrap_or_else(|| Storage::join(&run_base_dir, &action_name));
@@ -346,7 +357,23 @@ pub fn worker_main(entry: TaskEntry) -> ExitCode {
     let cfg = match resolve_config(parse_args(std::env::args().skip(1))) {
         Ok(cfg) => cfg,
         Err(e) => {
+            let bin = std::env::args()
+                .next()
+                .as_deref()
+                .and_then(|p| p.rsplit('/').next().map(String::from))
+                .unwrap_or_else(|| "<binary>".into());
             eprintln!("flyte worker configuration error: {e}");
+            eprintln!();
+            eprintln!(
+                "'{bin}' is the task's in-container worker: the Flyte backend launches it and\n\
+                 supplies this configuration through container args and environment variables,\n\
+                 so running the binary from a shell is expected to stop here. To use the task\n\
+                 directly:\n\
+                 \x20 - run it in-process, no backend needed:  `cargo test`, or `flyte::run(...)`\n\
+                 \x20 - print its interface:                   `{bin} describe-interface`\n\
+                 If this IS a backend-launched task container, the values listed above are\n\
+                 missing from the pod: check the container's env and args in the pod spec.",
+            );
             return ExitCode::FAILURE;
         }
     };

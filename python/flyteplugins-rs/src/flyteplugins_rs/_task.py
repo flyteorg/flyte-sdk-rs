@@ -86,6 +86,7 @@ def rust_task(
     env_name: str | None = None,
     image: flyte.Image | None = None,
     reuse: flyte.ReusePolicy | None = None,
+    platform: str | tuple[str, ...] | None = None,
     **task_kwargs: Any,
 ) -> tuple[RustWorkerTask, flyte.TaskEnvironment]:
     """Declare a Rust worker as a Flyte task, plus the environment holding it.
@@ -101,6 +102,10 @@ def rust_task(
     a repository that already exists rather than creating one. Pass ``dockerfile``
     to supply your own build instead -- see :func:`rust_worker_image` for the
     contract it has to meet -- or ``image`` for a fully custom ``flyte.Image``.
+
+    Pass ``platform`` (or set the ``RUST_IMAGE_PLATFORM`` env var) to pick the
+    architecture(s) the image is built for -- e.g. ``"linux/arm64"`` for an
+    arm64 cluster. The default stays flyte.Image's ``linux/amd64``.
 
     Pass ``reuse`` to run the task in a **warm container**: the backend keeps a
     pool of replicas alive and streams actions to them instead of scheduling a
@@ -145,6 +150,7 @@ def rust_task(
             dockerfile=dockerfile,
             image_name=image_name,
             reuse=reuse is not None,
+            platform=platform,
         ),
         interface=native_interface(descriptor),
         reusable=reuse,
