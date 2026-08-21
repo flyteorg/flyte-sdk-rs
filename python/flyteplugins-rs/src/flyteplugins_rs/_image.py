@@ -129,6 +129,7 @@ def _dockerfile_image(
     workspace: Path | None,
     image_name: str | None,
     reuse: bool,
+    platform: str | tuple[str, ...] | None = None,
 ) -> flyte.Image:
     """A worker image built from a user-supplied Dockerfile."""
     if not dockerfile.is_file():
@@ -162,6 +163,7 @@ def _dockerfile_image(
         file=dockerfile.resolve(),
         registry=registry,
         name=image_name or f"{binary}-worker",
+        platform=platform,
     )
 
 
@@ -196,6 +198,7 @@ def rust_worker_image(
     rust_base: str = "rust:1-bookworm",
     registry: str | None = None,
     reuse: bool = False,
+    platform: str | tuple[str, ...] | None = None,
 ) -> flyte.Image:
     """An image that compiles `binary` from source and installs it in /usr/local/bin.
 
@@ -211,6 +214,14 @@ def rust_worker_image(
     `[workspace.dependencies]`, or one depending on a sibling by path. That
     copies every member directory, because cargo loads all of them and a missing
     member fails before anything compiles.
+
+    `platform` sets the architecture(s) the local docker builder targets, e.g.
+    ``"linux/arm64"`` or ``("linux/amd64", "linux/arm64")`` for a multi-arch 
+    manifest list Kubernetes picks from per node. Without it the image keeps
+    `flyte.Image`'s default (``linux/amd64``) -- on Apple Silicon that means an
+    emulated local build, which is usually what you want to override. The value
+    rides on `Image.platform`, so it reaches `docker buildx build --platform`
+    and the registry existence check together; the remote builder ignores it.
 
     `dockerfile` replaces the declarative layers entirely, for builds the layer
     DSL cannot express -- private registries, extra system libraries, a
@@ -232,20 +243,21 @@ def rust_worker_image(
             workspace=workspace,
             image_name=image_name,
             reuse=reuse,
+            platform=platform,
         )
     context_root = workspace if workspace is not None else crate_dir
     ignore_file = _ignore_file_for(context_root)
 
     image = (
         flyte.Image.from_base(rust_base)
-        .clone(name=image_name or f"{binary}-worker", registry=registry, extendable=True)
+        .clone(name=image_name or f"{binary}-worker", registry=registry, extendable=True,platform=platform)
         # Replaces the SDK's default ignore set, which does not know about
         # cargo's target/ — without this the upload context is gigabytes.
         .with_dockerignore(ignore_file)
         # pyo3 build-time needs (temporary, until the pure-Rust controller
         # lands); single-stage means libpython is present at runtime for free.
-        .with_apt_packages("python3", "python3-dev", "pkg-config")
-        .with_env_vars({"PYO3_PYTHON": "python3"})
+        .with_apt_packages("pkg-config")
+        .with_env_vars({"PYO3_PYTHON": "$UV_PYTHON"})
         # The local docker builder chowns COPY layers to a `flyte` user; the
         # remote builder chowns to the base image's runtime user. Create the user
         # so one definition builds under either.
