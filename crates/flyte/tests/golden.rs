@@ -2,10 +2,10 @@
 //! ../flyte-sdk (see the `uv run python` snippets in each test) and pinned here
 //! so the Rust implementation stays byte-compatible.
 
+use flyte::FlyteType as _;
 use flyte::hash;
 use flyte::idl::Message as _;
 use flyte::types;
-use flyte::FlyteType as _;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, flyte::FlyteStruct)]
@@ -73,10 +73,7 @@ fn msgpack_struct_matches_mashumaro() {
 
 #[test]
 fn primitive_literal_roundtrips() {
-    assert_eq!(
-        i64::from_literal(&42i64.to_literal().unwrap()).unwrap(),
-        42
-    );
+    assert_eq!(i64::from_literal(&42i64.to_literal().unwrap()).unwrap(), 42);
     assert_eq!(
         f64::from_literal(&1.25f64.to_literal().unwrap()).unwrap(),
         1.25

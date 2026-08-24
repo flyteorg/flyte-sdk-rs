@@ -7,13 +7,11 @@
 
 pub use flyteidl2::flyteidl::common::{ActionIdentifier, ActionPhase, RunIdentifier};
 pub use flyteidl2::flyteidl::core::{
-    container_error, execution_error, literal, literal_type, primitive, scalar, Binary,
-    ContainerError, ErrorDocument, ExecutionError, KeyValuePair, Literal, LiteralType, Primitive,
-    Scalar, SimpleType, TypedInterface, Variable, VariableEntry, VariableMap,
+    Binary, ContainerError, ErrorDocument, ExecutionError, KeyValuePair, Literal, LiteralType,
+    Primitive, Scalar, SimpleType, TypedInterface, Variable, VariableEntry, VariableMap,
+    container_error, execution_error, literal, literal_type, primitive, scalar,
 };
 pub use flyteidl2::flyteidl::task::{Inputs, NamedLiteral, Outputs};
-pub use flyteidl2::flyteidl::workflow::{
-    ConditionAction, ConditionPromptType, ConditionWebhook,
-};
+pub use flyteidl2::flyteidl::workflow::{ConditionAction, ConditionPromptType, ConditionWebhook};
 pub use flyteidl2::google::protobuf::Duration;
 pub use prost::Message;

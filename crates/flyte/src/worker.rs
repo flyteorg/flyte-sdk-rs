@@ -10,13 +10,12 @@ use std::process::ExitCode;
 use prost::Message as _;
 
 use crate::context::{self, RuntimeState};
-use crate::controller::{runtime, Controller};
+use crate::controller::{Controller, runtime};
 use crate::error::Error;
-use crate::interface::TaskInterface;
 use crate::idl::{
-    container_error, execution_error, ContainerError, ErrorDocument, Inputs, Outputs,
-    RunIdentifier,
+    ContainerError, ErrorDocument, Inputs, Outputs, RunIdentifier, container_error, execution_error,
 };
+use crate::interface::TaskInterface;
 use crate::storage::Storage;
 
 /// Boxed future returned by a task entry fn.
@@ -214,7 +213,10 @@ fn error_document(err: &Error) -> ErrorDocument {
         Error::Condition { outcome, .. } => {
             (outcome.code().to_string(), execution_error::ErrorKind::User)
         }
-        _ => ("SystemError".to_string(), execution_error::ErrorKind::System),
+        _ => (
+            "SystemError".to_string(),
+            execution_error::ErrorKind::System,
+        ),
     };
     ErrorDocument {
         error: Some(ContainerError {
@@ -305,9 +307,13 @@ pub fn init_process_env() {
 
     // The legacy QueueService+StateService path is gone: always use the unified
     // ActionsService. Set before the controller (or any thread) starts.
-    std::env::set_var("_U_USE_ACTIONS", "1");
-    if env_nonempty("_UNION_EAGER_API_KEY").is_none() {
-        if let Some(key) = env_nonempty("EAGER_API_KEY") {
+    unsafe {
+        std::env::set_var("_U_USE_ACTIONS", "1");
+    }
+    if env_nonempty("_UNION_EAGER_API_KEY").is_none()
+        && let Some(key) = env_nonempty("EAGER_API_KEY")
+    {
+        unsafe {
             std::env::set_var("_UNION_EAGER_API_KEY", key);
         }
     }
@@ -315,10 +321,17 @@ pub fn init_process_env() {
         // API keys from `flyte create api-key` are url-safe base64; the
         // controller decodes with the standard alphabet. Translating -_ to +/
         // yields the same bytes, so both encodings work.
-        std::env::set_var("_UNION_EAGER_API_KEY", key.replace('-', "+").replace('_', "/"));
+        unsafe {
+            std::env::set_var(
+                "_UNION_EAGER_API_KEY",
+                key.replace('-', "+").replace('_', "/"),
+            );
+        }
     }
     if env_nonempty("_F_TRACE_COMPLETION_TIMEOUT").is_none() {
-        std::env::set_var("_F_TRACE_COMPLETION_TIMEOUT", "5");
+        unsafe {
+            std::env::set_var("_F_TRACE_COMPLETION_TIMEOUT", "5");
+        }
     }
 }
 

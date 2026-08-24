@@ -23,7 +23,10 @@ fn local_put_get_roundtrip() {
 
 #[test]
 fn join_normalizes_trailing_slash() {
-    assert_eq!(Storage::join("s3://b/prefix/", "x.pb"), "s3://b/prefix/x.pb");
+    assert_eq!(
+        Storage::join("s3://b/prefix/", "x.pb"),
+        "s3://b/prefix/x.pb"
+    );
     assert_eq!(Storage::join("s3://b/prefix", "x.pb"), "s3://b/prefix/x.pb");
 }
 
@@ -31,5 +34,8 @@ fn join_normalizes_trailing_slash() {
 fn unsupported_scheme_errors() {
     let storage = Storage::new();
     let err = flyte::run(async { storage.get("ftp://nope/x").await }).unwrap_err();
-    assert!(err.to_string().contains("unsupported storage scheme"), "{err}");
+    assert!(
+        err.to_string().contains("unsupported storage scheme"),
+        "{err}"
+    );
 }

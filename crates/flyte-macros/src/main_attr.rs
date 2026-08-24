@@ -30,10 +30,7 @@ fn expand_inner(attr: TokenStream, func: syn::ItemFn) -> syn::Result<proc_macro2
         ));
     }
 
-    let entry_ident = syn::Ident::new(
-        &format!("{}_entry", func.sig.ident),
-        func.sig.ident.span(),
-    );
+    let entry_ident = syn::Ident::new(&format!("{}_entry", func.sig.ident), func.sig.ident.span());
 
     // The fn passes through untouched; we only add `main` beside it. That is what
     // makes the attribute order-independent with respect to #[flyte::task].

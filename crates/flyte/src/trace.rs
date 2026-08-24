@@ -83,13 +83,13 @@ pub async fn prepare_trace(
     if let Some(recorded) = found {
         if recorded.failed {
             tracing::info!(action = %action_name, "trace previously failed; re-running");
-        } else if let Some(outputs_uri) = recorded.outputs_uri {
-            if has_outputs {
-                let data = state.storage.get(&outputs_uri).await?;
-                let outputs = Outputs::decode(data.as_ref())?;
-                tracing::info!(action = %action_name, "replaying recorded trace");
-                return Ok(TracePrep::Replay(outputs));
-            }
+        } else if let Some(outputs_uri) = recorded.outputs_uri
+            && has_outputs
+        {
+            let data = state.storage.get(&outputs_uri).await?;
+            let outputs = Outputs::decode(data.as_ref())?;
+            tracing::info!(action = %action_name, "replaying recorded trace");
+            return Ok(TracePrep::Replay(outputs));
         }
     }
 

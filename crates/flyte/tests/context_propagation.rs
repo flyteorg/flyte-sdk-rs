@@ -42,10 +42,9 @@ fn concurrent_scopes_do_not_leak_into_each_other() {
     flyte::run(async {
         let inside = flyte::context::IN_TRACE.scope(true, async {
             // A sibling scope with the opposite value, running concurrently.
-            let outside = flyte::context::IN_TRACE
-                .scope(false, async { flyte::context::in_trace() });
-            let (mine, theirs) =
-                futures::join!(async { flyte::context::in_trace() }, outside);
+            let outside =
+                flyte::context::IN_TRACE.scope(false, async { flyte::context::in_trace() });
+            let (mine, theirs) = futures::join!(async { flyte::context::in_trace() }, outside);
             assert!(!theirs, "the sibling scope keeps its own value");
             mine
         });

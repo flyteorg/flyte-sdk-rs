@@ -27,10 +27,10 @@ pub mod types;
 #[doc(hidden)]
 pub mod worker;
 
-pub use condition::{condition, Condition, ConditionBuilder, ConditionValue};
+pub use condition::{Condition, ConditionBuilder, ConditionValue, condition};
 pub use context::spawn;
 pub use error::{ConditionOutcome, Error};
-pub use flyte_macros::{main, task, trace, FlyteStruct};
+pub use flyte_macros::{FlyteStruct, main, task, trace};
 pub use interface::{TaskInterface, TaskVariable};
 pub use types::FlyteType;
-pub use worker::{run, worker_main, TaskEntry};
+pub use worker::{TaskEntry, run, worker_main};

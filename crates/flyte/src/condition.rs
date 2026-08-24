@@ -156,10 +156,9 @@ impl<T: ConditionValue> ConditionBuilder<T> {
                 seconds: t.as_secs() as i64,
                 nanos: t.subsec_nanos() as i32,
             }),
-            webhook: self.webhook.map(|url| ConditionWebhook {
-                url,
-                payload: None,
-            }),
+            webhook: self
+                .webhook
+                .map(|url| ConditionWebhook { url, payload: None }),
         };
 
         // Nothing is written to this path -- conditions have no inputs -- but the

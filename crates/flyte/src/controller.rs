@@ -11,7 +11,9 @@ use flyte_controller_base::action::{Action, ActionType};
 use flyte_controller_base::core::CoreBaseController;
 
 use crate::error::{ConditionOutcome, Error};
-use crate::idl::{ActionIdentifier, ActionPhase, ConditionAction, Literal, Message as _, RunIdentifier};
+use crate::idl::{
+    ActionIdentifier, ActionPhase, ConditionAction, Literal, Message as _, RunIdentifier,
+};
 
 /// What the SDK needs to know about a previously recorded action.
 pub struct RecordedAction {
