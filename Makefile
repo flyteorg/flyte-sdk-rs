@@ -6,7 +6,7 @@ all: fmt lint check test build
 
 help:
 	@echo "Available commands:"
-	@echo "  make              - Run all the commands cargo {build check test fmt lint}
+	@echo "  make              - Run all the commands cargo {build check test fmt lint}"
 	@echo "  make dev          - Run the application locally in development mode"
 	@echo "  make build        - Compile the release binary"
 	@echo "  make check        - Fast-check the code for compilation errors"
