@@ -45,8 +45,8 @@ fn traces_run_inline_without_backend() {
 
 #[test]
 fn task_entry_decodes_inputs_and_encodes_outputs() {
-    use flyte::idl::Message as _;
     use flyte::FlyteType as _;
+    use flyte::idl::Message as _;
 
     let entry = pipeline_entry();
     assert_eq!(entry.name, "pipeline");
@@ -54,8 +54,7 @@ fn task_entry_decodes_inputs_and_encodes_outputs() {
     let outputs = flyte::run((entry.run)(inputs)).unwrap();
     assert_eq!(outputs.literals.len(), 1);
     assert_eq!(outputs.literals[0].name, "o0");
-    let value =
-        i64::from_literal(outputs.literals[0].value.as_ref().unwrap()).unwrap();
+    let value = i64::from_literal(outputs.literals[0].value.as_ref().unwrap()).unwrap();
     assert_eq!(value, 32); // (3+1)^2 + (3+1)^2
     // Sanity: envelope proto-encodes.
     assert!(!outputs.encode_to_vec().is_empty());
@@ -87,7 +86,12 @@ fn distinct_inputs_name_traces_independently_of_call_order() {
     for (inputs_hash, name) in &forward {
         assert_eq!(
             *name,
-            flyte::hash::sub_action_name("a0", inputs_hash, "step", seq.next(&format!("step:{inputs_hash}"))),
+            flyte::hash::sub_action_name(
+                "a0",
+                inputs_hash,
+                "step",
+                seq.next(&format!("step:{inputs_hash}"))
+            ),
         );
     }
 }

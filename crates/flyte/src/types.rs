@@ -7,8 +7,8 @@
 
 use crate::error::Error;
 use crate::idl::{
-    literal, literal_type, scalar, Binary, Inputs, Literal, LiteralType, NamedLiteral, Outputs,
-    Primitive, Scalar, SimpleType, TypedInterface, Variable, VariableEntry, VariableMap,
+    Binary, Inputs, Literal, LiteralType, NamedLiteral, Outputs, Primitive, Scalar, SimpleType,
+    TypedInterface, Variable, VariableEntry, VariableMap, literal, literal_type, scalar,
 };
 
 pub const MSGPACK_TAG: &str = "msgpack";
@@ -65,10 +65,7 @@ macro_rules! int_flyte_type {
                 match primitive_of(lit) {
                     Some(crate::idl::primitive::Value::Integer(v)) => {
                         <$t>::try_from(*v).map_err(|_| {
-                            Error::Type(format!(
-                                "integer {v} out of range for {}",
-                                stringify!($t)
-                            ))
+                            Error::Type(format!("integer {v} out of range for {}", stringify!($t)))
                         })
                     }
                     _ => Err(Error::Type(format!(
@@ -118,9 +115,9 @@ impl FlyteType for String {
         simple_literal_type(SimpleType::String)
     }
     fn to_literal(&self) -> Result<Literal, Error> {
-        Ok(primitive_literal(crate::idl::primitive::Value::StringValue(
-            self.clone(),
-        )))
+        Ok(primitive_literal(
+            crate::idl::primitive::Value::StringValue(self.clone()),
+        ))
     }
     fn from_literal(lit: &Literal) -> Result<Self, Error> {
         match primitive_of(lit) {

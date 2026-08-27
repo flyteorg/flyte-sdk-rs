@@ -14,7 +14,7 @@
 
 use std::fmt::Write as _;
 
-use crate::idl::{literal_type, LiteralType, SimpleType, TypedInterface};
+use crate::idl::{LiteralType, SimpleType, TypedInterface, literal_type};
 use crate::types;
 
 /// One input or output of a task.
@@ -121,7 +121,7 @@ fn write_variable(s: &mut String, v: &TaskVariable, with_required: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{struct_literal_type, FlyteType as _};
+    use crate::types::{FlyteType as _, struct_literal_type};
 
     fn var(name: &'static str, literal_type: LiteralType) -> TaskVariable {
         TaskVariable {

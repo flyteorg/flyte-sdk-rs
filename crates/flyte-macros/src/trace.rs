@@ -1,6 +1,6 @@
 use md5::{Digest as _, Md5};
 use proc_macro::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::spanned::Spanned;
 
 /// Extracted `(ok_type, is_unit)` from a `Result<T, E>` return type.
