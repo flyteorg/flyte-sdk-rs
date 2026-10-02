@@ -191,14 +191,11 @@ fn list_request(q: &RunQuery, org: &str, token: &str) -> ListRunsRequest {
             sort::Direction::Ascending
         } as i32,
     };
-    // Both sort fields: the Python SDK still sends the deprecated `sort_by`,
-    // so that is what every backend honours today; `sort_by_fields` is its
-    // replacement.
-    #[allow(deprecated)]
+    // `sort_by_fields` only: the backend rejects a request that sets it and
+    // the deprecated `sort_by` together ("cannot specify both").
     let request = ListRequest {
         limit: q.limit,
         token: token.to_string(),
-        sort_by: Some(order.clone()),
         sort_by_fields: vec![order],
         filters,
         ..Default::default()
@@ -287,9 +284,10 @@ mod tests {
             (s.key.as_str(), s.direction),
             ("created_at", sort::Direction::Descending as i32)
         );
+        // Never the deprecated field too: the backend refuses both at once.
         #[allow(deprecated)]
         let legacy = lr.sort_by.clone();
-        assert_eq!(legacy.as_ref(), Some(s));
+        assert_eq!(legacy, None);
         assert_eq!(lr.limit, 40);
         match req.scope_by.unwrap() {
             list_runs_request::ScopeBy::ProjectId(p) => {
