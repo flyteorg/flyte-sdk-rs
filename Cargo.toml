@@ -21,11 +21,9 @@ repository = "https://github.com/flyteorg/flyte-sdk-rs"
 # Must match what flyte_core pins exactly. Both are `=` requirements and the two
 # crates pass flyteidl2 types across the boundary, so a mismatch is unresolvable
 # rather than merely unsatisfying -- bump this together with flyte_core.
-flyteidl2 = "=2.0.40"
+flyteidl2 = "=2.0.50"
 prost = { version = "0.13", features = ["std"] }
 tokio = { version = "1", features = ["full"] }
-pyo3 = { version = "0.24", features = ["abi3-py310"] }
-pyo3-async-runtimes = { version = "0.24", features = ["tokio-runtime"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "1"
 tracing = "0.1"

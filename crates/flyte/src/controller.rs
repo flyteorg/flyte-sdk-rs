@@ -237,5 +237,5 @@ impl Controller {
 /// The shared tokio runtime the controller's background workers run on. All SDK
 /// async work must run on this runtime (worker_main / run block on it).
 pub fn runtime() -> &'static tokio::runtime::Runtime {
-    pyo3_async_runtimes::tokio::get_runtime()
+    flyte_controller_base::runtime::get_runtime()
 }
