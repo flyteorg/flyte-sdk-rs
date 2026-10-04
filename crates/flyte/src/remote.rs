@@ -73,6 +73,10 @@ pub struct RunInfo {
     pub labels: BTreeMap<String, String>,
     /// The root action, for [`Runs::action_data`].
     pub action: ActionIdentifier,
+    /// Who started the run, when a user did: their email, handle and subject,
+    /// in that order, empty ones left out (an application principal gives
+    /// none). What Python reads from `action.metadata.executed_by.user`.
+    pub executed_by: Vec<String>,
 }
 
 impl Runs {
@@ -212,7 +216,21 @@ fn list_request(q: &RunQuery, org: &str, token: &str) -> ListRunsRequest {
 }
 
 fn run_info(run: flyteidl2::flyteidl::workflow::Run) -> Option<RunInfo> {
+    use flyteidl2::flyteidl::common::enriched_identity::Principal;
     let action = run.action?;
+    let executed_by = match action
+        .metadata
+        .as_ref()
+        .and_then(|m| m.executed_by.as_ref())
+        .and_then(|e| e.principal.as_ref())
+    {
+        Some(Principal::User(u)) => {
+            let spec = u.spec.clone().unwrap_or_default();
+            let subject = u.id.as_ref().map(|i| i.subject.clone()).unwrap_or_default();
+            [spec.email, spec.user_handle, subject].into_iter().filter(|s| !s.is_empty()).collect()
+        }
+        _ => Vec::new(),
+    };
     let id = action.id?;
     let status = action.status.unwrap_or_default();
     let start_time = status
@@ -229,6 +247,7 @@ fn run_info(run: flyteidl2::flyteidl::workflow::Run) -> Option<RunInfo> {
         start_time,
         labels: run.labels.into_iter().collect(),
         action: id,
+        executed_by,
     })
 }
 
