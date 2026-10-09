@@ -256,8 +256,8 @@ def rust_worker_image(
         .with_dockerignore(ignore_file)
         # pyo3 build-time needs (temporary, until the pure-Rust controller
         # lands); single-stage means libpython is present at runtime for free.
-        .with_apt_packages("pkg-config")
-        .with_env_vars({"PYO3_PYTHON": "$UV_PYTHON"})
+        .with_apt_packages("python3", "python3-dev", "pkg-config")
+        .with_env_vars({"PYO3_PYTHON": "python3"})
         # The local docker builder chowns COPY layers to a `flyte` user; the
         # remote builder chowns to the base image's runtime user. Create the user
         # so one definition builds under either.
