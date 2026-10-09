@@ -4,7 +4,7 @@
 
 use prost::Message as _;
 
-use crate::context::RuntimeState;
+use crate::context::{self, RuntimeState};
 use crate::controller::TraceRecord;
 use crate::error::Error;
 use crate::hash;
@@ -23,6 +23,7 @@ pub enum TracePrep {
 pub struct TraceHandle {
     pub action_name: String,
     pub friendly_name: String,
+    pub group: Option<String>,
     pub inputs_uri: String,
     pub iface_bytes: Vec<u8>,
     pub start: f64,
@@ -49,8 +50,18 @@ pub async fn prepare_trace(
 ) -> Result<TracePrep, Error> {
     let serialized = inputs.encode_to_vec();
     let input_hash = hash::inputs_hash(&inputs);
-    let seq = state.next_seq(&format!("{identity}:{input_hash}"));
-    let action_name = hash::sub_action_name(&state.action_name, &input_hash, identity, seq);
+    let group = context::current_group();
+    let seq = state.next_seq(&context::sequence_key(
+        &format!("{identity}:{input_hash}"),
+        group.as_deref(),
+    ));
+    let action_name = hash::sub_action_name(
+        &state.action_name,
+        &input_hash,
+        identity,
+        seq,
+        group.as_deref(),
+    );
 
     // Upload inputs before the replay lookup (matches Python ordering).
     let sub_path = Storage::join(&state.run_base_dir, &action_name);
@@ -96,6 +107,7 @@ pub async fn prepare_trace(
     Ok(TracePrep::Run(TraceHandle {
         action_name,
         friendly_name: friendly_name.to_string(),
+        group,
         inputs_uri,
         iface_bytes: iface.encode_to_vec(),
         start: now_f64(),
@@ -127,6 +139,7 @@ impl TraceHandle {
             parent_action_name: state.action_name.clone(),
             action_name: self.action_name.clone(),
             friendly_name: self.friendly_name,
+            group: self.group,
             inputs_uri: self.inputs_uri,
             outputs_uri,
             start: self.start,

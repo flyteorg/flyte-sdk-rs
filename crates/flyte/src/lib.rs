@@ -28,7 +28,7 @@ pub mod types;
 pub mod worker;
 
 pub use condition::{Condition, ConditionBuilder, ConditionValue, condition};
-pub use context::spawn;
+pub use context::{group, spawn};
 pub use error::{ConditionOutcome, Error};
 pub use flyte_macros::{FlyteStruct, main, task, trace};
 pub use interface::{TaskInterface, TaskVariable};

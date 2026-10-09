@@ -16,6 +16,9 @@
 //! Both cases rest on the same contract replay assumes anyway — a traced step is
 //! a function of its inputs.
 //!
+//! The fan-out runs inside `flyte::group`, so the console folds the n squares
+//! under one "squares" node instead of listing them beside `summarize`.
+//!
 //! - dev loop:      `cargo test -p concurrent-traces`
 //! - its interface: `cargo run -p concurrent-traces -- describe-interface`
 
@@ -53,7 +56,10 @@ async fn summarize(batch: Batch) -> Result<Summary, flyte::Error> {
 #[flyte::task]
 async fn fanout(n: i64) -> Result<String, flyte::Error> {
     // n traced actions, all in flight at once.
-    let squares = futures::future::try_join_all((1..=n).map(square)).await?;
+    let squares = flyte::group("squares", async {
+        futures::future::try_join_all((1..=n).map(square)).await
+    })
+    .await?;
     let summary = summarize(Batch { values: squares }).await?;
     Ok(format!(
         "squared {} values: total={} max={}",

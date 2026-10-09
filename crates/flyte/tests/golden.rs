@@ -19,8 +19,19 @@ struct Stats {
 #[test]
 fn sub_action_name_matches_python() {
     assert_eq!(
-        hash::sub_action_name("a0", "IH", "TH", 1),
+        hash::sub_action_name("a0", "IH", "TH", 1, None),
         "ape1kkafckt4ekjb0537lcq3u"
+    );
+}
+
+/// Python: ActionID(name="a0").new_sub_action_from(1, "TH", "IH", group="g1"),
+///         i.e. base36_encode(hashlib.md5(b"a0-IH-TH-1-g1").digest())
+///         == "2xsxgamn7phr1noaqdvyityxn"
+#[test]
+fn grouped_sub_action_name_matches_python() {
+    assert_eq!(
+        hash::sub_action_name("a0", "IH", "TH", 1, Some("g1")),
+        "2xsxgamn7phr1noaqdvyityxn"
     );
 }
 

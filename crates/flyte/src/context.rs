@@ -120,10 +120,61 @@ tokio::task_local! {
     /// one-shot worker, which uses the process-global instead.
     pub static CURRENT: Arc<RuntimeState>;
 
+    /// The group set by [`group`], if any. Folded into the names of the actions
+    /// recorded under it and sent along with them, so the UI can fold them
+    /// together.
+    pub static GROUP: Option<Arc<str>>;
+
     /// True while a traced fn body is executing; nested traced fns then run
     /// inline instead of recording their own actions. Note: task-local, so the
     /// flag does not cross `tokio::spawn` boundaries.
     pub static IN_TRACE: bool;
+}
+
+/// Run `fut` with every trace and condition it starts placed in the group
+/// `name` -- Python's `with flyte.group(name):`.
+///
+/// ```ignore
+/// flyte::group("preprocess", async {
+///     clean(raw).await?;
+///     validate(raw).await
+/// })
+/// .await?;
+/// ```
+///
+/// The group is part of each action's deterministic name, so the same call in
+/// two different groups is two actions, not one replayed twice. Groups do not
+/// nest: an inner `group` replaces the outer one for its duration, exactly as
+/// in Python. Outside a running task it only scopes the name, which nothing
+/// reads, so the body runs the same either way.
+///
+/// Like the rest of the context it is task-local: use [`spawn`], not
+/// `tokio::spawn`, to keep it across a spawned task.
+pub async fn group<F: Future>(name: impl Into<String>, fut: F) -> F::Output {
+    let name: String = name.into();
+    GROUP.scope(Some(Arc::from(name)), fut).await
+}
+
+/// The group the calling code is in, if any. Empty names count as none, as
+/// they do in Python.
+pub fn current_group() -> Option<String> {
+    GROUP
+        .try_with(|g| g.as_deref().map(str::to_string))
+        .ok()
+        .flatten()
+        .filter(|g| !g.is_empty())
+}
+
+/// Fold the group into a call-sequence key, as Python's
+/// `generate_task_call_sequence` does. The group is part of the action name, so
+/// identical calls in different groups must not share a counter: if they did,
+/// which group drew which sequence number would depend on scheduling order and
+/// the names would change from one attempt to the next.
+pub fn sequence_key(key: &str, group: Option<&str>) -> String {
+    match group {
+        Some(g) => format!("{key}:{g}"),
+        None => key.to_string(),
+    }
 }
 
 pub fn in_trace() -> bool {
@@ -132,7 +183,7 @@ pub fn in_trace() -> bool {
 
 /// `tokio::spawn` that carries the flyte context across the task boundary.
 ///
-/// Both [`CURRENT`] and [`IN_TRACE`] are task-locals, so a bare `tokio::spawn`
+/// [`CURRENT`], [`GROUP`] and [`IN_TRACE`] are all task-locals, so a bare `tokio::spawn`
 /// inside a task body loses them: traced fns in the spawned future would see no
 /// runtime state and silently run un-recorded, and a step spawned from inside a
 /// traced body would start recording actions of its own instead of running
@@ -147,8 +198,9 @@ where
 {
     let state = CURRENT.try_with(Arc::clone).ok();
     let tracing = in_trace();
+    let group = GROUP.try_with(Clone::clone).ok().flatten();
     tokio::spawn(async move {
-        let fut = IN_TRACE.scope(tracing, fut);
+        let fut = GROUP.scope(group, IN_TRACE.scope(tracing, fut));
         match state {
             Some(state) => CURRENT.scope(state, fut).await,
             None => fut.await,
@@ -158,7 +210,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::Sequencer;
+    use super::{Sequencer, current_group, group, sequence_key, spawn};
 
     #[test]
     fn sequencer_counts_per_key_from_one() {
@@ -168,5 +220,36 @@ mod tests {
         assert_eq!(seq.next("f:h2"), 1);
         assert_eq!(seq.next("g:h1"), 1);
         assert_eq!(seq.next("f:h1"), 3);
+    }
+
+    #[test]
+    fn sequence_key_folds_the_group_like_python() {
+        assert_eq!(sequence_key("f:h1", None), "f:h1");
+        assert_eq!(sequence_key("f:h1", Some("g")), "f:h1:g");
+    }
+
+    #[tokio::test]
+    async fn group_scopes_and_replaces_rather_than_nests() {
+        assert_eq!(current_group(), None);
+        group("outer", async {
+            assert_eq!(current_group().as_deref(), Some("outer"));
+            group("inner", async {
+                assert_eq!(current_group().as_deref(), Some("inner"));
+            })
+            .await;
+            assert_eq!(current_group().as_deref(), Some("outer"));
+        })
+        .await;
+        assert_eq!(current_group(), None);
+        group("", async { assert_eq!(current_group(), None) }).await;
+    }
+
+    #[tokio::test]
+    async fn spawn_carries_the_group() {
+        let seen = group("g", async {
+            spawn(async { current_group() }).await.unwrap()
+        })
+        .await;
+        assert_eq!(seen.as_deref(), Some("g"));
     }
 }
