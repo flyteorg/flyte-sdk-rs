@@ -8,8 +8,8 @@
 //!     smoke_fixture write-inputs <path>
 //!     smoke_fixture read-outputs <path>
 
-use flyte::idl::Message as _;
 use flyte::FlyteType as _;
+use flyte::idl::Message as _;
 
 fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().collect();

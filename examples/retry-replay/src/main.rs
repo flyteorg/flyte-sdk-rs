@@ -61,11 +61,14 @@ mod tests {
     #[test]
     fn fails_first_attempt_then_succeeds() {
         // No backend attached: traced fns just run their bodies, nothing recorded.
-        std::env::remove_var("FLYTE_ATTEMPT_NUMBER");
+        // SAFETY: this is the only test in the binary, so no other thread reads
+        // the environment concurrently.
+        unsafe { std::env::remove_var("FLYTE_ATTEMPT_NUMBER") };
         let err = flyte::run(flaky(6)).unwrap_err();
         assert!(err.to_string().contains("DeliberateFailure"), "{err}");
 
-        std::env::set_var("FLYTE_ATTEMPT_NUMBER", "1");
+        // SAFETY: as above.
+        unsafe { std::env::set_var("FLYTE_ATTEMPT_NUMBER", "1") };
         let out = flyte::run(flaky(6)).unwrap();
         assert_eq!(out, "finished with 42");
     }
