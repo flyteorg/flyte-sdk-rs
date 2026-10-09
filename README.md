@@ -82,6 +82,23 @@ A rejection or a timeout comes back as `Error::Condition`, carrying a
 `ConditionOutcome` you can match on. Full example:
 [`examples/human-approval`](examples/human-approval).
 
+## Group steps
+
+`flyte::group` folds the traces and conditions started inside it under one
+name in the console — Python's `with flyte.group(...)`:
+
+```rust
+let squares = flyte::group("squares", async {
+    futures::future::try_join_all((1..=n).map(square)).await
+})
+.await?;
+```
+
+The group is part of each step's recorded name, the same way Python names
+them, so the same call in two groups is two steps. Groups replace rather than
+nest, and like the rest of the task context they follow `flyte::spawn` but not
+a bare `tokio::spawn`.
+
 See [`examples/`](examples) for concurrent traces and replay-on-retry too.
 
 ## Install
@@ -255,9 +272,9 @@ the planned pure-Rust controller.
 
 v0 supports single-node traces: `#[flyte::task]`, `#[flyte::trace]` with
 record/replay, `#[derive(FlyteStruct)]`, and primitives — plus `flyte::condition`
-for pausing on an external signal such as a human approval. Not yet: task fan-out
-from Rust (a Python parent calling a Rust task works today), a native Rust
-launcher, files/dataframes, and trace groups. Expect contract changes while
+for pausing on an external signal such as a human approval, and `flyte::group`
+to fold steps together. Not yet: task fan-out from Rust (a Python parent calling
+a Rust task works today), a native Rust launcher, and files/dataframes. Expect contract changes while
 experimental.
 
 `flyte::condition` has been run end to end against a live backend — task pauses,
