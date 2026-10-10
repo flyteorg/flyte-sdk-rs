@@ -70,7 +70,7 @@ fn distinct_inputs_name_traces_independently_of_call_order() {
             let n = seq.next(&format!("step:{inputs_hash}"));
             (
                 inputs_hash.to_string(),
-                flyte::hash::sub_action_name("a0", inputs_hash, "step", n),
+                flyte::hash::sub_action_name("a0", inputs_hash, "step", n, None),
             )
         })
     };
@@ -90,7 +90,8 @@ fn distinct_inputs_name_traces_independently_of_call_order() {
                 "a0",
                 inputs_hash,
                 "step",
-                seq.next(&format!("step:{inputs_hash}"))
+                seq.next(&format!("step:{inputs_hash}")),
+                None,
             ),
         );
     }

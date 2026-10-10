@@ -58,6 +58,26 @@ impl Storage {
         Ok(())
     }
 
+    /// [`Storage::get`], but a missing object is `Ok(None)` rather than an
+    /// error -- for objects whose absence means something (a run created with
+    /// no inputs has no inputs object).
+    pub async fn get_optional(&self, uri: &str) -> Result<Option<bytes::Bytes>, Error> {
+        let (store, path) = self.resolve(uri)?;
+        let result = match store.get(&path).await {
+            Ok(r) => r,
+            Err(object_store::Error::NotFound { .. }) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        let data = result.bytes().await?;
+        if data.len() > MAX_IO_BYTES {
+            return Err(Error::Storage(format!(
+                "object at {uri} is {} bytes, exceeds the {MAX_IO_BYTES} byte cap",
+                data.len()
+            )));
+        }
+        Ok(Some(data))
+    }
+
     pub async fn get(&self, uri: &str) -> Result<bytes::Bytes, Error> {
         let (store, path) = self.resolve(uri)?;
         let result = store.get(&path).await?;

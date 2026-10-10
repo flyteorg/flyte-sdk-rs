@@ -64,8 +64,21 @@ pub fn base36_encode(digest: [u8; 16]) -> String {
 /// for the ordering guarantees). It is also part of Python's component string, so
 /// dropping it here would diverge from the names Python generates — the golden
 /// test `sub_action_name_matches_python` pins that.
-pub fn sub_action_name(parent: &str, input_hash: &str, identity: &str, seq: u32) -> String {
-    let components = format!("{parent}-{input_hash}-{identity}-{seq}");
+///
+/// `group` (from [`crate::context::group`]) is appended as `-{group}` when set,
+/// again as Python does, so ungrouped names are unchanged.
+pub fn sub_action_name(
+    parent: &str,
+    input_hash: &str,
+    identity: &str,
+    seq: u32,
+    group: Option<&str>,
+) -> String {
+    let mut components = format!("{parent}-{input_hash}-{identity}-{seq}");
+    if let Some(g) = group {
+        components.push('-');
+        components.push_str(g);
+    }
     let digest: [u8; 16] = Md5::digest(components.as_bytes()).into();
     base36_encode(digest)
 }
