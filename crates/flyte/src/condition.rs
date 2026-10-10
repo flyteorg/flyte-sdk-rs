@@ -134,8 +134,15 @@ impl<T: ConditionValue> ConditionBuilder<T> {
         // Same derivation Python uses, which passes the condition's name as both
         // the identity and the inputs hash. Deterministic across attempts, so a
         // retry finds an already-signalled condition instead of asking again.
-        let seq = state.next_seq(&self.name);
-        let action_name = hash::sub_action_name(&state.action_name, &self.name, &self.name, seq);
+        let group = context::current_group();
+        let seq = state.next_seq(&context::sequence_key(&self.name, group.as_deref()));
+        let action_name = hash::sub_action_name(
+            &state.action_name,
+            &self.name,
+            &self.name,
+            seq,
+            group.as_deref(),
+        );
         if seq > 1 {
             tracing::warn!(
                 condition = %self.name,
@@ -174,6 +181,7 @@ impl<T: ConditionValue> ConditionBuilder<T> {
                 parent_action_name: state.action_name.clone(),
                 action_name: action_name.clone(),
                 spec,
+                group,
                 inputs_uri,
                 run_output_base: state.run_base_dir.clone(),
             })

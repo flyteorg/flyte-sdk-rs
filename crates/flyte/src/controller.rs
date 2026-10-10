@@ -27,6 +27,8 @@ pub struct TraceRecord {
     pub parent_action_name: String,
     pub action_name: String,
     pub friendly_name: String,
+    /// From [`crate::context::group`]; `None` outside one.
+    pub group: Option<String>,
     pub inputs_uri: String,
     /// Empty string when the trace has no outputs.
     pub outputs_uri: String,
@@ -41,6 +43,7 @@ pub struct ConditionRecord {
     pub parent_action_name: String,
     pub action_name: String,
     pub spec: ConditionAction,
+    pub group: Option<String>,
     /// Placeholder path: conditions have no inputs and nothing is written here,
     /// but the enqueue path requires a non-empty value.
     pub inputs_uri: String,
@@ -134,7 +137,7 @@ impl Controller {
             rec.parent_action_name,
             &action_id_bytes,
             rec.friendly_name,
-            None, // group: not supported in v0
+            rec.group,
             rec.inputs_uri,
             rec.outputs_uri,
             rec.start,
@@ -162,7 +165,7 @@ impl Controller {
             &rec.spec.encode_to_vec(),
             rec.inputs_uri,
             rec.run_output_base,
-            None, // group: not supported in v0
+            rec.group,
         )
         .map_err(|e| Error::Controller(format!("building condition action failed: {e}")))?;
         self.inner
