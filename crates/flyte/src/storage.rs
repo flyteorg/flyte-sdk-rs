@@ -58,6 +58,26 @@ impl Storage {
         Ok(())
     }
 
+    /// [`Storage::get`], but a missing object is `Ok(None)` rather than an
+    /// error -- for objects whose absence means something (a run created with
+    /// no inputs has no inputs object).
+    pub async fn get_optional(&self, uri: &str) -> Result<Option<bytes::Bytes>, Error> {
+        let (store, path) = self.resolve(uri)?;
+        let result = match store.get(&path).await {
+            Ok(r) => r,
+            Err(object_store::Error::NotFound { .. }) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        let data = result.bytes().await?;
+        if data.len() > MAX_IO_BYTES {
+            return Err(Error::Storage(format!(
+                "object at {uri} is {} bytes, exceeds the {MAX_IO_BYTES} byte cap",
+                data.len()
+            )));
+        }
+        Ok(Some(data))
+    }
+
     pub async fn get(&self, uri: &str) -> Result<bytes::Bytes, Error> {
         let (store, path) = self.resolve(uri)?;
         let result = store.get(&path).await?;
@@ -126,5 +146,33 @@ impl Storage {
         let store = build()?;
         stores.insert(key.to_string(), store.clone());
         Ok(store)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn get_optional_is_none_for_a_missing_object_and_some_for_a_present_one() {
+        let dir = std::env::temp_dir().join(format!("flyte-storage-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let storage = Storage::new();
+        let missing = dir.join("no-such-inputs.pb");
+        assert!(
+            storage
+                .get_optional(missing.to_str().unwrap())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let present = dir.join("inputs.pb");
+        std::fs::write(&present, b"abc").unwrap();
+        let got = storage
+            .get_optional(present.to_str().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(got.as_deref(), Some(&b"abc"[..]));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

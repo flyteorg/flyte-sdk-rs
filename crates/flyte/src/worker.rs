@@ -257,10 +257,17 @@ pub async fn execute(
 
     let result: Result<Outputs, Error> = async {
         let inputs = match inputs_uri {
-            Some(uri) => {
-                let data = state.storage.get(uri).await?;
-                Inputs::decode(data.as_ref())?
-            }
+            // A run can be created with no inputs at all (its parameters in
+            // the run's env instead): then there is no inputs object, and the
+            // task gets empty inputs. A task that needs inputs fails at their
+            // conversion, as it would on an empty set.
+            Some(uri) => match state.storage.get_optional(uri).await? {
+                Some(data) => Inputs::decode(data.as_ref())?,
+                None => {
+                    tracing::info!("no inputs object at {uri}; running with empty inputs");
+                    Inputs::default()
+                }
+            },
             None => Inputs::default(),
         };
         (entry.run)(inputs).await
