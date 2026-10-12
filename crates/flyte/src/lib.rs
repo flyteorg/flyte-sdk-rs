@@ -16,6 +16,7 @@ pub mod hash;
 #[doc(hidden)]
 pub mod idl;
 mod interface;
+pub mod remote;
 #[doc(hidden)]
 pub mod storage;
 #[doc(hidden)]

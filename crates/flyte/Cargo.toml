@@ -30,6 +30,9 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures = "0.3"
+# remote.rs: RunService over the same transport flyte_core uses.
+tonic = { version = "0.12", features = ["tls"] }
+tower = "0.4"
 bytes = "1"
 
 [dev-dependencies]
