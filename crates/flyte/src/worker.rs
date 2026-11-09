@@ -74,6 +74,17 @@ pub fn parse_args(args: impl Iterator<Item = String>) -> WorkerConfig {
             "--project" => cfg.project = take_value(),
             "--domain" => cfg.domain = take_value(),
             "--org" => cfg.org = take_value(),
+            // Specs of the tasks this one may call, serialized by the launcher.
+            // Registered here rather than carried in the config so that every
+            // entrypoint parsing its args -- including a reusable container's,
+            // per assignment -- gets them without further wiring.
+            "--task-specs" => {
+                if let Some(bundle) = take_value()
+                    && let Err(e) = crate::task_ref::register_spec_bundle(&bundle)
+                {
+                    tracing::error!("--task-specs: {e}");
+                }
+            }
             // Known flags we accept but don't use in v0.
             "--version" | "--raw-data-path" | "--checkpoint-path" | "--prev-checkpoint"
             | "--run-start-time" | "--image-cache" | "--tgz" | "--pkl" | "--dest"
