@@ -491,20 +491,107 @@ static SUBMIT_PERMITS: LazyLock<tokio::sync::Semaphore> = LazyLock::new(|| {
 /// Calls are ordinary futures: run them concurrently with `join!` or
 /// `try_join_all`. Dropping one before it finishes aborts the child action.
 ///
-/// Fails outside a running task (e.g. under [`run`](crate::run)): there is no
-/// backend to launch the child on.
+/// Outside a running task (e.g. under [`run`](crate::run)) there is no backend
+/// to launch the child on: the call runs the [`stub_task`] registered for it,
+/// and fails if there is none.
 pub async fn call_task<O: TaskOutput>(task: &TaskRef, inputs: TaskInputs) -> Result<O, Error> {
-    let state = context::current().ok_or_else(|| {
-        Error::System(format!(
-            "call_task({}) needs a running task: there is no backend to launch it on",
-            task.display_name()
-        ))
-    })?;
+    let Some(state) = context::current() else {
+        return O::from_outputs(call_stub(task.display_name(), inputs).await?);
+    };
     let resolved = task.resolve()?;
     let name = resolved.name().to_string();
     let inputs = inputs.into_inputs(&name, &resolved)?;
     let outputs = launch(&state, task, &resolved, inputs).await?;
     O::from_outputs(outputs)
+}
+
+// ---------------------------------------------------------------------------
+// Local stubs: what a call does with no backend.
+
+type StubFn = Arc<
+    dyn Fn(StubInputs) -> futures::future::BoxFuture<'static, Result<Outputs, Error>> + Send + Sync,
+>;
+
+static STUBS: LazyLock<RwLock<HashMap<String, StubFn>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+/// The inputs a [`stub_task`] was called with.
+pub struct StubInputs(HashMap<String, Literal>);
+
+impl StubInputs {
+    pub fn get<T: FlyteType>(&self, name: &str) -> Result<T, Error> {
+        let lit = self
+            .0
+            .get(name)
+            .ok_or_else(|| Error::Type(format!("stub called without input {name:?}")))?;
+        T::from_literal(lit)
+    }
+}
+
+/// What a [`stub_task`] returns: `()`, or any [`FlyteType`] as output `o0`.
+pub trait StubOutput {
+    #[doc(hidden)]
+    fn into_outputs(self) -> Result<Outputs, Error>;
+}
+
+impl StubOutput for () {
+    fn into_outputs(self) -> Result<Outputs, Error> {
+        Ok(Outputs::default())
+    }
+}
+
+impl<T: FlyteType> StubOutput for T {
+    fn into_outputs(self) -> Result<Outputs, Error> {
+        Ok(crate::types::build_outputs(vec![(
+            "o0",
+            self.to_literal()?,
+        )]))
+    }
+}
+
+/// Stand in for task `name` when it is called with no backend -- in tests and
+/// under [`run`](crate::run) -- since the real task, possibly another binary,
+/// cannot run in-process. Replaces any stub already registered for `name`;
+/// stubs are process-wide, so tests that stub the same task differently must
+/// not run concurrently.
+///
+/// ```ignore
+/// flyte::stub_task("ci_env.compile", |i| async move {
+///     Ok(format!("built {}", i.get::<String>("pkg")?))
+/// });
+/// ```
+pub fn stub_task<O, F, Fut>(name: &str, f: F)
+where
+    O: StubOutput,
+    F: Fn(StubInputs) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Result<O, Error>> + Send + 'static,
+{
+    let f: StubFn = Arc::new(move |inputs| {
+        let fut = f(inputs);
+        Box::pin(async move { fut.await?.into_outputs() })
+    });
+    STUBS
+        .write()
+        .expect("stub registry poisoned")
+        .insert(name.to_string(), f);
+}
+
+async fn call_stub(name: &str, inputs: TaskInputs) -> Result<Outputs, Error> {
+    if let Some(e) = inputs.error {
+        return Err(e);
+    }
+    let stub = STUBS
+        .read()
+        .expect("stub registry poisoned")
+        .get(name)
+        .cloned()
+        .ok_or_else(|| {
+            Error::System(format!(
+                "call_task({name}) has no backend to launch it on: run it inside a task, \
+                 or register a local stand-in with flyte::stub_task"
+            ))
+        })?;
+    stub(StubInputs(inputs.literals.into_iter().collect())).await
 }
 
 /// What [`launch`] computes before submitting: everything that must match
@@ -831,8 +918,22 @@ mod tests {
     }
 
     #[test]
-    fn call_task_outside_a_task_fails_clearly() {
-        let err = crate::run(call_task::<()>(&TaskRef::new("x.y"), TaskInputs::new())).unwrap_err();
-        assert!(err.to_string().contains("needs a running task"), "{err}");
+    fn call_task_outside_a_task_runs_its_stub() {
+        let err = crate::run(call_task::<()>(
+            &TaskRef::new("x.unstubbed"),
+            TaskInputs::new(),
+        ))
+        .unwrap_err();
+        assert!(err.to_string().contains("flyte::stub_task"), "{err}");
+
+        stub_task("x.compile", |i| async move {
+            Ok(format!("built {}", i.get::<String>("pkg")?))
+        });
+        let out: String = crate::run(call_task(
+            &TaskRef::new("x.compile").with_retries(2),
+            crate::inputs! { pkg: "a" },
+        ))
+        .unwrap();
+        assert_eq!(out, "built a");
     }
 }

@@ -3,8 +3,10 @@
 //! Write a task as an async fn, mark steps with `#[flyte::trace]`, and add
 //! `#[flyte::main]` to turn the crate into a Flyte task container. Traced steps
 //! execute in-process, are recorded as child actions on the backend, and are
-//! replayed on retry. [`call_task`] launches another task as a child action. Without a backend traced fns just run their bodies, so
-//! [`run`] executes the whole task in-process for tests and dev loops.
+//! replayed on retry. [`call_task`] launches another task as a
+//! child action. Without a backend traced fns just run their bodies and called
+//! tasks run their [`stub_task`] stand-ins, so [`run`] executes the whole task
+//! in-process for tests and dev loops.
 
 mod condition;
 pub mod context;
@@ -33,6 +35,8 @@ pub use context::{group, spawn};
 pub use error::{ConditionOutcome, Error};
 pub use flyte_macros::{FlyteStruct, main, task, trace};
 pub use interface::{TaskInterface, TaskVariable};
-pub use task_ref::{SpecSource, TaskInputs, TaskOutput, TaskOutputs, TaskRef, call_task};
+pub use task_ref::{
+    SpecSource, StubInputs, TaskInputs, TaskOutput, TaskOutputs, TaskRef, call_task, stub_task,
+};
 pub use types::FlyteType;
 pub use worker::{TaskEntry, run, worker_main};
