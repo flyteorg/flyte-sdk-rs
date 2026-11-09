@@ -40,7 +40,9 @@ def _sctx():
 def _bundle(spec):
     args = list(spec.task_template.container.args)
     assert "--task-specs" in args
-    return json.loads(base64.b64decode(args[args.index("--task-specs") + 1]))
+    bundle = json.loads(base64.b64decode(args[args.index("--task-specs") + 1]))
+    assert bundle["v"] == 1
+    return bundle["tasks"]
 
 
 def test_bundle_holds_the_spec_python_would_submit():

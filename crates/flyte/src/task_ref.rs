@@ -259,6 +259,13 @@ static SPECS: LazyLock<RwLock<HashMap<String, Arc<ResolvedSpec>>>> =
 pub const SPEC_BUNDLE_ENV: &str = "_F_RS_TASK_SPECS";
 
 #[derive(serde::Deserialize)]
+struct Bundle {
+    /// Format version; this SDK reads 1.
+    v: u32,
+    tasks: Vec<BundleEntry>,
+}
+
+#[derive(serde::Deserialize)]
 struct BundleEntry {
     /// base64 of a serialized `TaskSpec`.
     spec: String,
@@ -267,9 +274,9 @@ struct BundleEntry {
     inputs: Option<Vec<String>>,
 }
 
-/// Register the specs in a launcher bundle -- base64 of a JSON list of
-/// `{"spec": <base64 TaskSpec>, "inputs": [<declared input names>]}` -- making
-/// them callable by name. Returns how many it registered.
+/// Register the specs in a launcher bundle -- base64 of JSON
+/// `{"v": 1, "tasks": [{"spec": <base64 TaskSpec>, "inputs": [<declared input names>]}]}`
+/// -- making them callable by name. Returns how many it registered.
 ///
 /// The worker does this for the `--task-specs` argument, so neither `#[flyte::main]`
 /// nor a reusable container's entrypoint has to.
@@ -278,7 +285,12 @@ pub fn register_spec_bundle(bundle: &str) -> Result<usize, Error> {
     let b64 = base64::engine::general_purpose::STANDARD;
     let bad = |e: &dyn std::fmt::Display| Error::System(format!("bad task spec bundle: {e}"));
     let json = b64.decode(bundle.trim()).map_err(|e| bad(&e))?;
-    let entries: Vec<BundleEntry> = serde_json::from_slice(&json).map_err(|e| bad(&e))?;
+    let Bundle { v, tasks: entries } = serde_json::from_slice(&json).map_err(|e| bad(&e))?;
+    if v != 1 {
+        return Err(Error::System(format!(
+            "task spec bundle version {v} is newer than this SDK reads (1): upgrade flyte"
+        )));
+    }
     let mut specs = SPECS.write().expect("spec registry poisoned");
     for entry in &entries {
         let bytes = b64.decode(&entry.spec).map_err(|e| bad(&e))?;
@@ -489,7 +501,8 @@ static SUBMIT_PERMITS: LazyLock<tokio::sync::Semaphore> = LazyLock::new(|| {
 /// cached, a call with a cache hit completes without running.
 ///
 /// Calls are ordinary futures: run them concurrently with `join!` or
-/// `try_join_all`. Dropping one before it finishes aborts the child action.
+/// `try_join_all`. Dropping one before it finishes cancels the child action --
+/// for now only on this side: see [`Controller::cancel_task`].
 ///
 /// Outside a running task (e.g. under [`run`](crate::run)) there is no backend
 /// to launch the child on: the call runs the [`stub_task`] registered for it,
@@ -763,7 +776,7 @@ fn failure_error(task: &str, action: &str, f: TaskFailure) -> Error {
     }
 }
 
-/// Aborts a started child when its caller stops waiting (the call's future was
+/// Cancels a started child when its caller stops waiting (the call's future was
 /// dropped), as Python cancels on `CancelledError`.
 struct CancelOnDrop(Option<(Controller, StartedTask)>);
 
@@ -901,7 +914,8 @@ mod tests {
             .iter()
             .map(|g| serde_json::json!({ "spec": b64.encode(unhex(g["task_spec_hex"].as_str().unwrap())) }))
             .collect();
-        let bundle = b64.encode(serde_json::to_vec(&entries).unwrap());
+        let bundle =
+            b64.encode(serde_json::to_vec(&serde_json::json!({"v": 1, "tasks": entries})).unwrap());
         assert_eq!(register_spec_bundle(&bundle).unwrap(), 3);
         assert_eq!(
             TaskRef::new("golden_env.lint").resolve().unwrap().name(),

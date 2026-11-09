@@ -326,7 +326,13 @@ impl Controller {
         }))
     }
 
-    /// Abort a child task, e.g. because its caller stopped waiting for it.
+    /// Cancel a child task, e.g. because its caller stopped waiting for it.
+    ///
+    /// Known gap: `flyte_core`'s `cancel_action` only marks the action cancelled
+    /// in the informer and releases its waiter. Unlike Python's controller it
+    /// sends no `ActionsService.Abort`, so the child runs on until it finishes or
+    /// the run ends. Fixing that belongs in `flyte_core`, whose actions client
+    /// is private.
     pub async fn cancel_task(&self, task: StartedTask) -> Result<(), Error> {
         let mut action = task.0;
         self.inner

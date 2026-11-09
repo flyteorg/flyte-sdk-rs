@@ -25,6 +25,8 @@ RUST_TASK_TYPE = "rust-task"
 # Past this the bundle (one container arg) is worth a warning: it is stored in
 # every action of the parent and shipped to every pod.
 _BUNDLE_WARN_BYTES = 256 * 1024
+# The `--task-specs` format, read by `flyte::task_ref::register_spec_bundle`.
+BUNDLE_VERSION = 1
 
 
 def spec_bundle(calls: Sequence[TaskTemplate], sctx: SerializationContext) -> str:
@@ -62,7 +64,9 @@ def spec_bundle(calls: Sequence[TaskTemplate], sctx: SerializationContext) -> st
         }
         for task in calls
     ]
-    bundle = base64.b64encode(json.dumps(entries, separators=(",", ":")).encode()).decode()
+    # `v` is the format the Rust side checks before reading anything else.
+    payload = {"v": BUNDLE_VERSION, "tasks": entries}
+    bundle = base64.b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
     if len(bundle) > _BUNDLE_WARN_BYTES:
         import warnings
 
