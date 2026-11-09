@@ -63,6 +63,10 @@ parent's container args as `--task-specs <base64 JSON>`.
 - Nesting is transitive: a callee's spec carries its own `--task-specs`.
 - Callee environments are added to `depends_on`, so their images are built.
   Callees need no separate deployment.
+- At call time the spec's `id.org/project/domain` are set to the calling run's,
+  as Python's `_submit` builds a callee under the current action's. Deploy-time
+  serialization leaves them empty, and the backend rejects that. None of these
+  fields is hashed.
 - Specs are frozen at the parent's deploy. That is the same as Python, where a
   parent always launches the callee code it was deployed with.
 

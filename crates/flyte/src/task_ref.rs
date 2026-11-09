@@ -27,7 +27,9 @@ use crate::context::{self, RuntimeState};
 use crate::controller::{Controller, StartedTask, TaskFailure, TaskRecord, TaskResult};
 use crate::error::Error;
 use crate::hash;
-use crate::idl::{ActionPhase, Inputs, Literal, NamedLiteral, Outputs, RetryStrategy, TaskSpec};
+use crate::idl::{
+    ActionPhase, Inputs, Literal, NamedLiteral, Outputs, RetryStrategy, RunIdentifier, TaskSpec,
+};
 use crate::storage::Storage;
 use crate::types::FlyteType;
 
@@ -686,6 +688,35 @@ fn call_names(
     }
 }
 
+/// The spec actually submitted for one call: the resolved spec placed in the
+/// calling run's org/project/domain -- Python builds a callee's spec under the
+/// current action's, and a spec serialized at deploy time has none, which the
+/// backend rejects -- with the call's overrides applied. Neither touches
+/// anything the action name or cache key hashes (`id.name`, the interface,
+/// `discovery_version`).
+fn spec_for_call(spec: &TaskSpec, overrides: &Overrides, run: &RunIdentifier) -> TaskSpec {
+    let mut spec = spec.clone();
+    if let Some(template) = spec.task_template.as_mut() {
+        if let Some(id) = template.id.as_mut() {
+            id.org.clone_from(&run.org);
+            id.project.clone_from(&run.project);
+            id.domain.clone_from(&run.domain);
+        }
+        if let Some(retries) = overrides.retries
+            && let Some(md) = template.metadata.as_mut()
+        {
+            md.retries = Some(RetryStrategy {
+                retries,
+                ..Default::default()
+            });
+        }
+    }
+    if let Some(short_name) = &overrides.short_name {
+        spec.short_name = short_name.to_string();
+    }
+    spec
+}
+
 async fn launch(
     state: &RuntimeState,
     task: &TaskRef,
@@ -705,21 +736,7 @@ async fn launch(
         |key| state.next_seq(key),
     );
 
-    let mut spec = resolved.spec.clone();
-    if let Some(retries) = task.overrides.retries
-        && let Some(md) = spec
-            .task_template
-            .as_mut()
-            .and_then(|t| t.metadata.as_mut())
-    {
-        md.retries = Some(RetryStrategy {
-            retries,
-            ..Default::default()
-        });
-    }
-    if let Some(short_name) = &task.overrides.short_name {
-        spec.short_name = short_name.to_string();
-    }
+    let spec = spec_for_call(&resolved.spec, &task.overrides, state.controller.run_id());
 
     let started = {
         let _permit = SUBMIT_PERMITS
@@ -905,6 +922,62 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn calls_are_placed_in_the_callers_run_without_changing_names() {
+        let golden: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../tests/golden/call_task.json")).unwrap();
+        let mut deployed =
+            TaskSpec::decode(unhex(golden[0]["task_spec_hex"].as_str().unwrap()).as_slice())
+                .unwrap();
+        // As serialized at deploy time: no org/project/domain.
+        let id = deployed
+            .task_template
+            .as_mut()
+            .unwrap()
+            .id
+            .as_mut()
+            .unwrap();
+        (id.org, id.project, id.domain) = Default::default();
+        let run = RunIdentifier {
+            org: "o2".into(),
+            project: "adam".into(),
+            domain: "development".into(),
+            name: "r".into(),
+        };
+        let overrides = Overrides {
+            retries: Some(3),
+            short_name: Some("compile-x".into()),
+        };
+        let called = spec_for_call(&deployed, &overrides, &run);
+        let template = called.task_template.as_ref().unwrap();
+        let id = template.id.as_ref().unwrap();
+        assert_eq!(
+            (id.org.as_str(), id.project.as_str(), id.domain.as_str()),
+            ("o2", "adam", "development")
+        );
+        assert_eq!(id.name, "golden_env.compile");
+        assert_eq!(
+            template
+                .metadata
+                .as_ref()
+                .unwrap()
+                .retries
+                .as_ref()
+                .unwrap()
+                .retries,
+            3
+        );
+        assert_eq!(called.short_name, "compile-x");
+        // Identity and interface hash are the same whichever run it lands in.
+        let a = ResolvedSpec::decode(&deployed.encode_to_vec(), None).unwrap();
+        let b = ResolvedSpec::decode(&called.encode_to_vec(), None).unwrap();
+        assert_eq!(
+            (&a.identity, &a.interface_hash),
+            (&b.identity, &b.interface_hash)
+        );
+        assert_eq!(a.identity, golden[0]["identity"].as_str().unwrap());
     }
 
     #[test]
