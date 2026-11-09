@@ -67,7 +67,9 @@ struct Overrides {
 }
 
 impl TaskRef {
-    /// The task named `name` (its fully-qualified name, e.g. `"ci_env.compile"`).
+    /// The task `name`, qualified by its environment: `"{env}.{task}"`, e.g.
+    /// `"ci_env.compile"`. The bare task name also resolves when no other
+    /// callable environment has a task of that name.
     /// `const`, so a task can be declared once as a `static`.
     pub const fn new(name: &'static str) -> Self {
         TaskRef {
@@ -199,6 +201,21 @@ impl ResolvedSpec {
             .map_or("", |id| id.name.as_str())
     }
 
+    /// `"{environment}.{task}"`: the name a [`TaskRef`] uses. Python prefixes
+    /// a function task's own name with its environment already, so that is
+    /// kept as is; a `rust_task` keeps its bare name (`id.name`, which is what
+    /// the backend registers and the cache key hashes), and gains the prefix
+    /// here only.
+    pub fn qualified_name(&self) -> String {
+        let name = self.name();
+        match self.spec.environment.as_ref().map(|e| e.name.as_str()) {
+            Some(env) if !env.is_empty() && !name.starts_with(&format!("{env}.")) => {
+                format!("{env}.{name}")
+            }
+            _ => name.to_string(),
+        }
+    }
+
     fn has_outputs(&self) -> bool {
         self.spec
             .task_template
@@ -252,6 +269,7 @@ fn wire_field(mut buf: &[u8], tag: u32) -> Option<&[u8]> {
 // ---------------------------------------------------------------------------
 // Spec bundle: the child specs the launcher serialized at deploy time.
 
+/// Keyed by [`ResolvedSpec::qualified_name`].
 static SPECS: LazyLock<RwLock<HashMap<String, Arc<ResolvedSpec>>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
@@ -295,7 +313,7 @@ pub fn register_spec_bundle(bundle: &str) -> Result<usize, Error> {
     for entry in &entries {
         let bytes = b64.decode(&entry.spec).map_err(|e| bad(&e))?;
         let spec = ResolvedSpec::decode(&bytes, entry.inputs.clone())?;
-        specs.insert(spec.name().to_string(), Arc::new(spec));
+        specs.insert(spec.qualified_name(), Arc::new(spec));
     }
     Ok(entries.len())
 }
@@ -313,6 +331,17 @@ fn lookup_spec(name: &str) -> Result<Arc<ResolvedSpec>, Error> {
     let specs = SPECS.read().expect("spec registry poisoned");
     if let Some(spec) = specs.get(name) {
         return Ok(spec.clone());
+    }
+    // The bare task name, when only one environment has a task by that name.
+    let mut bare = specs.iter().filter(|(_, s)| s.name() == name);
+    match (bare.next(), bare.next()) {
+        (Some((_, spec)), None) => return Ok(spec.clone()),
+        (Some((a, _)), Some((b, _))) => {
+            return Err(Error::System(format!(
+                "task name {name:?} is ambiguous: qualify it with its environment, e.g. {a:?} or {b:?}"
+            )));
+        }
+        _ => {}
     }
     let mut known: Vec<_> = specs.keys().cloned().collect();
     known.sort();
@@ -910,13 +939,47 @@ mod tests {
         let golden: Vec<serde_json::Value> =
             serde_json::from_str(include_str!("../tests/golden/call_task.json")).unwrap();
         let b64 = base64::engine::general_purpose::STANDARD;
-        let entries: Vec<_> = golden
+        let mut entries: Vec<_> = golden
             .iter()
             .map(|g| serde_json::json!({ "spec": b64.encode(unhex(g["task_spec_hex"].as_str().unwrap())) }))
             .collect();
+        // Shaped like rust_task specs: a bare task name, the environment beside
+        // it; and the same bare name in two environments.
+        let lint = TaskSpec::decode(unhex(golden[2]["task_spec_hex"].as_str().unwrap()).as_slice())
+            .unwrap();
+        for env in ["rs-step", "rs-other"] {
+            let mut spec = lint.clone();
+            let template = spec.task_template.as_mut().unwrap();
+            template.id.as_mut().unwrap().name = if env == "rs-step" {
+                "step_rs"
+            } else {
+                "dup_rs"
+            }
+            .into();
+            spec.environment.as_mut().unwrap().name = env.into();
+            entries.push(serde_json::json!({ "spec": b64.encode(spec.encode_to_vec()) }));
+            let mut dup = spec.clone();
+            dup.task_template
+                .as_mut()
+                .unwrap()
+                .id
+                .as_mut()
+                .unwrap()
+                .name = "dup_rs".into();
+            entries.push(serde_json::json!({ "spec": b64.encode(dup.encode_to_vec()) }));
+        }
         let bundle =
             b64.encode(serde_json::to_vec(&serde_json::json!({"v": 1, "tasks": entries})).unwrap());
-        assert_eq!(register_spec_bundle(&bundle).unwrap(), 3);
+        assert_eq!(register_spec_bundle(&bundle).unwrap(), 7);
+        let resolve = |n: &str| TaskRef::named(n).resolve().map(|s| s.name().to_string());
+        assert_eq!(resolve("rs-step.step_rs").unwrap(), "step_rs");
+        assert_eq!(resolve("step_rs").unwrap(), "step_rs");
+        assert_eq!(resolve("rs-other.dup_rs").unwrap(), "dup_rs");
+        let err = resolve("dup_rs").unwrap_err().to_string();
+        assert!(
+            err.contains("ambiguous") && err.contains("rs-step.dup_rs"),
+            "{err}"
+        );
         assert_eq!(
             TaskRef::new("golden_env.lint").resolve().unwrap().name(),
             "golden_env.lint"

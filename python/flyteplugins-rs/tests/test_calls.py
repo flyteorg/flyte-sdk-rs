@@ -74,3 +74,15 @@ def test_nesting_is_transitive():
 def test_no_calls_no_arg():
     t, _ = _task("plain", ["x"])
     assert "--task-specs" not in translate_task_to_wire(t, _sctx()).task_template.container.args
+
+
+def test_callee_is_found_by_env_qualified_name():
+    # flyte::TaskRef::new("<env>.<task>") resolves against these two fields: a
+    # rust_task's own name stays bare (it is what the backend registers).
+    from flyteidl2.task import task_definition_pb2
+
+    leaf, _ = _task("step_rs", ["x"], env_name="pr-shadow-rs-step")
+    parent, _ = _task("pr_rs", ["sha"], calls=[leaf])
+    (entry,) = _bundle(translate_task_to_wire(parent, _sctx()))
+    spec = task_definition_pb2.TaskSpec.FromString(base64.b64decode(entry["spec"]))
+    assert (spec.environment.name, spec.task_template.id.name) == ("pr-shadow-rs-step", "step_rs")
