@@ -345,6 +345,8 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-stream",
+ "tonic",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -363,8 +365,6 @@ dependencies = [
 [[package]]
 name = "flyte_core"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5f259ed1cfb56f125339ac254841711aef5ca33532db9a3f4d9f91e3b3215a5"
 dependencies = [
  "async-trait",
  "base64 0.22.1",

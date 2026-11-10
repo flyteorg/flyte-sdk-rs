@@ -10,6 +10,8 @@ members = [
     "examples/custom-image",
     "examples/reusable",
 ]
+# A dependency of crates/flyte, not ours to lint or test.
+exclude = ["vendor/flyte_core"]
 
 [workspace.package]
 edition = "2024"

@@ -12,7 +12,10 @@ description = "Flyte SDK for Rust (v0: single-node traces)"
 # because its default features include pyo3/auto-initialize -- which is what this
 # crate wants, since the worker embeds an interpreter. To develop against a local
 # checkout, add a [patch.crates-io] section pointing at it.
-flyte_core = "0.1"
+# Vendored 0.1.0 plus a backport of flyte-sdk main's watch reconnect and an
+# HTTP/2 keepalive (see vendor/flyte_core/PATCHES.md). Drop the path once a
+# flyte_core release carries both.
+flyte_core = { path = "../../vendor/flyte_core", version = "0.1.0" }
 flyte-macros = { path = "../flyte-macros", version = "0.1.0" }
 flyteidl2 = { workspace = true }
 prost = { workspace = true }
@@ -35,3 +38,6 @@ bytes = "1"
 
 [dev-dependencies]
 tempfile = "3"
+# watch_reconnect.rs serves fake State/Queue services to the real controller.
+tonic = "0.12"
+tokio-stream = "0.1"

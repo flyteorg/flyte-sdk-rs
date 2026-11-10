@@ -121,6 +121,19 @@ matches on. Today: `retries` sets `metadata.retries`, and `short_name` sets
 `max_inline_io_bytes`. Each is a field on `Overrides`, applied to the
 `TaskSpec` clone in `launch`.
 
+## flyte_core is vendored, patched
+
+`crates/flyte` depends on `vendor/flyte_core` by path: crates.io 0.1.0 plus two
+fixes (`vendor/flyte_core/PATCHES.md`). Without them, the first demo fan-out run
+(ugq9mw6f6zjr99pss8w6) hung. All 19 children succeeded, and the parent never
+heard. 0.1.0 spins forever on a watch stream the server ended, and it never
+reconnects. Its channel also sends no keepalive pings, so a silently dropped
+connection hangs the same way. The first fix is backported from flyte-sdk main,
+which has not been released. The second is in neither. A git or path dependency
+on `flyte` picks up the vendored crate, so consumers need no extra
+`[patch]`. Drop the vendor once a flyte_core release carries both;
+`tests/watch_reconnect.rs` must still pass against it.
+
 ## Known gaps
 
 - **Cancel is local only.** `flyte_core::CoreBaseController::cancel_action`
