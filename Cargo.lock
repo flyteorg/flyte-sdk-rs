@@ -306,6 +306,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fanout"
+version = "0.1.0"
+dependencies = [
+ "flyte",
+ "futures",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

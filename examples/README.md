@@ -10,6 +10,7 @@ the container) plus a small `task.py` that declares it to Flyte.
 | [`retry-replay`](retry-replay) | Why traces exist: an expensive step is recorded, the task fails, and the retry **replays** the step instead of re-running it. |
 | [`human-approval`](human-approval) | Pausing for a person: two approvals are raised up front with `flyte::condition`, then collected. Needs a backend, and someone to answer. |
 | [`reusable`](reusable) | Warm containers: a pool of replicas serves many actions instead of a pod per action. One extra dependency (`union-reuse`), one changed attribute, and `reuse=` on the Python side. |
+| [`fanout`](fanout) | Calling other tasks: `flyte::call_task` once per value, all in flight together, against a Python callee declared with `rust_task(calls=[...])`. In-process, the callee is a `flyte::stub_task`. |
 | [`custom-image`](custom-image) | Bringing your own [`Dockerfile`](custom-image/Dockerfile) instead of declarative layers — a system package in the runtime image, and a multi-stage build. Needs local docker. |
 
 ## Running any of them

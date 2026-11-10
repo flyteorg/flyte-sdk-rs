@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import flyte
 from flyte.extend import TaskTemplate
@@ -70,7 +71,9 @@ def spec_bundle(calls: Sequence[TaskTemplate], sctx: SerializationContext) -> st
     if len(bundle) > _BUNDLE_WARN_BYTES:
         import warnings
 
-        warnings.warn(f"task spec bundle for {len(calls)} callees is {len(bundle)} bytes", stacklevel=2)
+        warnings.warn(
+            f"task spec bundle for {len(calls)} callees is {len(bundle)} bytes", stacklevel=2
+        )
     return bundle
 
 

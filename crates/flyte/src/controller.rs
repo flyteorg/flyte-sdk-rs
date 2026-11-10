@@ -328,13 +328,25 @@ impl Controller {
 
     /// Cancel a child task, e.g. because its caller stopped waiting for it.
     ///
-    /// Known gap: `flyte_core`'s `cancel_action` only marks the action cancelled
-    /// in the informer and releases its waiter. Unlike Python's controller it
-    /// sends no `ActionsService.Abort`, so the child runs on until it finishes or
-    /// the run ends. Fixing that belongs in `flyte_core`, whose actions client
-    /// is private.
+    /// Releases the waiter and, through ActionsService (`_U_USE_ACTIONS=1`),
+    /// aborts the child server-side as Python's controller does. Over
+    /// StateService the child runs on until it finishes or the run ends.
     pub async fn cancel_task(&self, task: StartedTask) -> Result<(), Error> {
-        let mut action = task.0;
+        let parent = task.0.parent_action_name.clone();
+        // The informer's copy knows whether the child already finished, so
+        // prefer it. Neither copy is marked started (only the launching
+        // worker's is), and cancel_action aborts only a started action: mark it,
+        // since start_task submitted it. If the enqueue is still in flight, the
+        // abort finds nothing and the child is launched anyway.
+        let mut action = match self
+            .inner
+            .get_action(task.0.action_id.clone(), &parent)
+            .await
+        {
+            Ok(Some(live)) => live,
+            _ => task.0,
+        };
+        action.mark_started();
         self.inner
             .cancel_action(&mut action)
             .await

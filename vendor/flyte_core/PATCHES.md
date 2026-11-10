@@ -13,6 +13,11 @@ Source: crates.io `flyte_core` 0.1.0, unchanged except for the following.
    does nothing without `http2_keep_alive_interval`, so a connection dropped
    silently by the network left the stream pending forever. Pings every 30s,
    20s timeout, as Python's client does. Not yet in flyte-sdk main.
+3. **Cancel aborts the action server-side** (`src/core.rs`). In 0.1.0,
+   `cancel_action` only released the local waiter, and the child ran on.
+   Backported from flyte-sdk main: when the action was started, send
+   `ActionsService.Abort` (ActionsService only, as upstream; NotFound and
+   FailedPrecondition mean it already finished).
 
 Seen as: demo run ugq9mw6f6zjr99pss8w6. All 19 children succeeded, and the Rust
 parent hung in `call_task` for 2h with no further log lines.

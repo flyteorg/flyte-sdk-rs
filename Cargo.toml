@@ -9,6 +9,7 @@ members = [
     "examples/human-approval",
     "examples/custom-image",
     "examples/reusable",
+    "examples/fanout",
 ]
 # A dependency of crates/flyte, not ours to lint or test.
 exclude = ["vendor/flyte_core"]

@@ -101,6 +101,48 @@ a bare `tokio::spawn`.
 
 See [`examples/`](examples) for concurrent traces and replay-on-retry too.
 
+## Call other tasks
+
+`flyte::call_task` runs another task as a child action and returns its output.
+Calls are ordinary futures, so fanning out is `try_join_all`:
+
+```rust
+static SQUARE: flyte::TaskRef = flyte::TaskRef::new("fanout_py.square");
+
+#[flyte::main]
+#[flyte::task]
+async fn sum_of_squares(n: i64) -> Result<i64, flyte::Error> {
+    let calls = (1..=n).map(|x| flyte::call_task::<i64>(&SQUARE, flyte::inputs! { x: x }));
+    Ok(futures::future::try_join_all(calls).await?.iter().sum())
+}
+```
+
+A `TaskRef` only names the callee, as `<environment>.<task>`. Its spec comes
+from the launcher, which builds it at deploy time:
+
+```python
+sum_of_squares, rust_env = rs.rust_task(crate_dir=..., binary="fanout", calls=[square])
+```
+
+The callee can be a Rust or a Python task. Its environment joins `depends_on`,
+so it needs no deploy of its own. `inputs!` names the callee's inputs and
+checks them against its interface. Retries and the short name can be
+overridden per call (`SQUARE.with_retries(3)`).
+
+Calls behave like the Python SDK's:
+
+- **Names:** each call is named from its inputs and its order among identical
+  calls, so a retried parent picks up its earlier calls instead of launching
+  them again.
+- **Caching:** a cached callee gets the same cache key Python would compute, so
+  a cache hit completes without running.
+- **Cancellation:** dropping a call before it finishes cancels the child.
+
+With no backend, under `flyte::run`, a call runs the `flyte::stub_task`
+registered for its name. Full example: [`examples/fanout`](examples/fanout).
+The design, including fetching deployed tasks and defining callees in Rust, is
+in [`docs/design/task-fanout.md`](docs/design/task-fanout.md).
+
 ## Install
 
 Two halves. The **crate** compiles into your task container; the **Python
@@ -248,12 +290,11 @@ redirects that to `crates/flyte` for in-workspace builds — so `cargo build` an
 still builds standalone, which is what the worker image does.
 
 Transport comes from [`flyte_core`](https://crates.io/crates/flyte_core), released
-from [flyte-sdk](https://github.com/flyteorg/flyte-sdk) — no sibling checkout
-needed. To develop against a local copy, add it to the root `[patch.crates-io]`:
-
-```toml
-flyte_core = { path = "../flyte-sdk/rs_controller" }
-```
+from [flyte-sdk](https://github.com/flyteorg/flyte-sdk). For now it is vendored
+at [`vendor/flyte_core`](vendor/flyte_core): 0.1.0 plus fixes that flyte-sdk has
+not released yet ([`PATCHES.md`](vendor/flyte_core/PATCHES.md)). To develop
+against a local flyte-sdk checkout, point `crates/flyte`'s `flyte_core`
+dependency at `../flyte-sdk/rs_controller`.
 
 That dependency is temporary: it links `libpython` (via pyo3) and disappears with
 the planned pure-Rust controller.
@@ -267,14 +308,15 @@ the planned pure-Rust controller.
 | [`retry-replay`](examples/retry-replay) | An expensive step replayed instead of re-run after a failure. |
 | [`human-approval`](examples/human-approval) | Pausing for a human decision with `flyte::condition`. |
 | [`reusable`](examples/reusable) | A warm container: one pool of replicas serving many actions, with a non-reusable Python parent fanning out to it. |
+| [`fanout`](examples/fanout) | A Rust task calling another task once per value, concurrently, with `flyte::call_task`. |
 
 ## Status
 
 v0 supports single-node traces: `#[flyte::task]`, `#[flyte::trace]` with
 record/replay, `#[derive(FlyteStruct)]`, and primitives — plus `flyte::condition`
 for pausing on an external signal such as a human approval, and `flyte::group`
-to fold steps together. Not yet: task fan-out from Rust (a Python parent calling
-a Rust task works today), a native Rust launcher, and files/dataframes. Expect contract changes while
+to fold steps together, and `flyte::call_task` for calling other tasks. Not
+yet: a native Rust launcher, and files/dataframes. Expect contract changes while
 experimental.
 
 `flyte::condition` has been run end to end against a live backend — task pauses,

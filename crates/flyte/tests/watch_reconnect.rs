@@ -4,7 +4,9 @@
 //! (demo run ugq9mw6f6zjr99pss8w6).
 //!
 //! The controller watches through StateService or, with `_U_USE_ACTIONS=1`,
-//! ActionsService. The fake serves both, and the test runs once per path.
+//! ActionsService. The fake serves both, and the test runs once per path. It
+//! also checks that cancelling a child aborts it server-side, which only
+//! ActionsService can do.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -42,6 +44,7 @@ struct Fake {
     enqueued: Mutex<Vec<String>>,
     enqueue_seen: Notify,
     watches: Mutex<usize>,
+    aborted: Mutex<Vec<String>>,
 }
 
 #[derive(Clone)]
@@ -183,17 +186,18 @@ impl ActionsService for Svc {
     async fn update(&self, _: Request<UpdateRequest>) -> Result<Response<UpdateResponse>, Status> {
         Err(Status::unimplemented("update"))
     }
-    async fn abort(&self, _: Request<AbortRequest>) -> Result<Response<AbortResponse>, Status> {
-        Err(Status::unimplemented("abort"))
+    async fn abort(&self, req: Request<AbortRequest>) -> Result<Response<AbortResponse>, Status> {
+        let name = req.into_inner().action_id.unwrap().name;
+        self.0.aborted.lock().unwrap().push(name);
+        Ok(Response::new(AbortResponse::default()))
     }
     async fn signal(&self, _: Request<SignalRequest>) -> Result<Response<SignalResponse>, Status> {
         Err(Status::unimplemented("signal"))
     }
 }
 
-/// Start a fake backend, submit one child through a fresh controller, and wait
-/// for it. Returns how many watch streams the controller opened.
-fn submit_and_wait_across_a_stream_end() -> usize {
+/// A fresh controller connected to a fresh fake backend.
+fn connect() -> (Arc<Fake>, Controller) {
     let fake = Arc::new(Fake::default());
     let svc = Svc(fake.clone());
     let listener = runtime()
@@ -215,6 +219,10 @@ fn submit_and_wait_across_a_stream_end() -> usize {
         name: "r".into(),
     };
     let controller = Controller::without_auth(run, format!("http://{addr}"), 2).unwrap();
+    (fake, controller)
+}
+
+fn child(action_name: &str) -> TaskRecord {
     let spec = TaskSpec {
         task_template: Some(TaskTemplate {
             id: Some(Identifier {
@@ -225,20 +233,23 @@ fn submit_and_wait_across_a_stream_end() -> usize {
         }),
         ..Default::default()
     };
+    TaskRecord {
+        parent_action_name: "a0".into(),
+        action_name: action_name.into(),
+        spec,
+        group: None,
+        inputs_uri: "s3://bucket/in".into(),
+        run_output_base: "s3://bucket".into(),
+        cache_key: None,
+    }
+}
 
+/// Submit one child, then wait for it while the server ends the first watch
+/// stream. Returns how many watch streams the controller opened.
+fn submit_and_wait_across_a_stream_end() -> usize {
+    let (fake, controller) = connect();
     let result = runtime().block_on(async {
-        controller
-            .start_task(TaskRecord {
-                parent_action_name: "a0".into(),
-                action_name: "child-1".into(),
-                spec,
-                group: None,
-                inputs_uri: "s3://bucket/in".into(),
-                run_output_base: "s3://bucket".into(),
-                cache_key: None,
-            })
-            .await
-            .unwrap();
+        controller.start_task(child("child-1")).await.unwrap();
         tokio::time::timeout(
             Duration::from_secs(30),
             controller.wait_task("a0", "child-1"),
@@ -258,6 +269,17 @@ fn submit_and_wait_across_a_stream_end() -> usize {
     *fake.watches.lock().unwrap()
 }
 
+/// Submit one child and cancel it. Returns the actions the server was asked to
+/// abort.
+fn submit_and_cancel() -> Vec<String> {
+    let (fake, controller) = connect();
+    runtime().block_on(async {
+        let started = controller.start_task(child("child-2")).await.unwrap();
+        controller.cancel_task(started).await.unwrap();
+    });
+    fake.aborted.lock().unwrap().clone()
+}
+
 #[test]
 fn completion_arrives_after_the_server_ends_the_watch_stream() {
     for actions_service in ["0", "1"] {
@@ -269,5 +291,12 @@ fn completion_arrives_after_the_server_ends_the_watch_stream() {
             watches >= 2,
             "_U_USE_ACTIONS={actions_service}: the informer never reconnected"
         );
+        let aborted = submit_and_cancel();
+        let expected: &[&str] = if actions_service == "1" {
+            &["child-2"]
+        } else {
+            &[]
+        };
+        assert_eq!(aborted, expected, "_U_USE_ACTIONS={actions_service}");
     }
 }

@@ -532,8 +532,8 @@ static SUBMIT_PERMITS: LazyLock<tokio::sync::Semaphore> = LazyLock::new(|| {
 /// cached, a call with a cache hit completes without running.
 ///
 /// Calls are ordinary futures: run them concurrently with `join!` or
-/// `try_join_all`. Dropping one before it finishes cancels the child action --
-/// for now only on this side: see [`Controller::cancel_task`].
+/// `try_join_all`. Dropping one before it finishes cancels the child action
+/// (see [`Controller::cancel_task`]).
 ///
 /// Outside a running task (e.g. under [`run`](crate::run)) there is no backend
 /// to launch the child on: the call runs the [`stub_task`] registered for it,

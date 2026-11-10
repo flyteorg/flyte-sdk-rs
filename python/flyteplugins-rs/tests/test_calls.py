@@ -34,7 +34,9 @@ def _task(name, inputs, **kw):
 
 
 def _sctx():
-    return SerializationContext(project="p", domain="d", org="o", version="v1", root_dir=Path.cwd())
+    return SerializationContext(
+        project="p", domain="d", org="o", version="v1", root_dir=Path.cwd()
+    )
 
 
 def _bundle(spec):
@@ -46,7 +48,11 @@ def _bundle(spec):
 
 
 def test_bundle_holds_the_spec_python_would_submit():
-    leaf, leaf_env = _task("compile", ["sha", "pkg"], cache=flyte.Cache(behavior="override", version_override="v1"))
+    leaf, leaf_env = _task(
+        "compile",
+        ["sha", "pkg"],
+        cache=flyte.Cache(behavior="override", version_override="v1"),
+    )
     parent, parent_env = _task("graph", ["sha"], calls=[leaf])
 
     assert leaf_env in parent_env.depends_on
@@ -54,8 +60,15 @@ def test_bundle_holds_the_spec_python_would_submit():
     (entry,) = _bundle(translate_task_to_wire(parent, _sctx()))
     assert entry["inputs"] == ["sha", "pkg"]
     # What RemoteController._submit would build for this child at call time.
-    expected = translate_task_to_wire(leaf, SerializationContext(project="p", domain="d", org="o", version="v1", root_dir=Path.cwd()))
-    assert base64.b64decode(entry["spec"]) == expected.SerializeToString(deterministic=True)
+    expected = translate_task_to_wire(
+        leaf,
+        SerializationContext(
+            project="p", domain="d", org="o", version="v1", root_dir=Path.cwd()
+        ),
+    )
+    assert base64.b64decode(entry["spec"]) == expected.SerializeToString(
+        deterministic=True
+    )
 
 
 def test_nesting_is_transitive():
@@ -66,14 +79,19 @@ def test_nesting_is_transitive():
     (mid_entry,) = _bundle(translate_task_to_wire(top, _sctx()))
     from flyteidl2.task import task_definition_pb2
 
-    mid_spec = task_definition_pb2.TaskSpec.FromString(base64.b64decode(mid_entry["spec"]))
+    mid_spec = task_definition_pb2.TaskSpec.FromString(
+        base64.b64decode(mid_entry["spec"])
+    )
     (leaf_entry,) = _bundle(mid_spec)
     assert leaf_entry["inputs"] == ["pkg"]
 
 
 def test_no_calls_no_arg():
     t, _ = _task("plain", ["x"])
-    assert "--task-specs" not in translate_task_to_wire(t, _sctx()).task_template.container.args
+    assert (
+        "--task-specs"
+        not in translate_task_to_wire(t, _sctx()).task_template.container.args
+    )
 
 
 def test_callee_is_found_by_env_qualified_name():
@@ -85,4 +103,7 @@ def test_callee_is_found_by_env_qualified_name():
     parent, _ = _task("pr_rs", ["sha"], calls=[leaf])
     (entry,) = _bundle(translate_task_to_wire(parent, _sctx()))
     spec = task_definition_pb2.TaskSpec.FromString(base64.b64decode(entry["spec"]))
-    assert (spec.environment.name, spec.task_template.id.name) == ("pr-shadow-rs-step", "step_rs")
+    assert (spec.environment.name, spec.task_template.id.name) == (
+        "pr-shadow-rs-step",
+        "step_rs",
+    )

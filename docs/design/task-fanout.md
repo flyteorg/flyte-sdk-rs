@@ -1,6 +1,6 @@
 # Calling tasks from Rust tasks
 
-Status: Track 1 implemented on `adam/task-fanout`; Track 2 designed, not built.
+Status: Track 1 implemented and run end to end (a Rust parent fanning out to 19 Rust children, demo run ulj7rsm55n8mp92vpqxm); Track 2 designed, not built.
 
 ## The contract that does not change
 
@@ -75,9 +75,9 @@ parent's container args as `--task-specs <base64 JSON>`.
 ### (a) Reference tasks: fetch a deployed task
 
 New variant `SpecSource::Remote { name, version: VersionSel }`, where `VersionSel`
-is `Exact(String) | Current | Latest`. It also becomes a resolution step for
-`Named`: if the bundle lacks the name, fetch it (*bundle, then remote*). Whether
-that fallback is on by default is an open question (below).
+is `Exact(String) | Current | Latest`. `Named` never falls back to it: a
+missing `calls=` entry is an error, not a silent fetch of whatever is deployed.
+Fetching is always asked for, with an explicit `TaskRef::remote`.
 
 - Fetch through `flyteidl2` `TaskService.GetTaskDetails` (or `ListTasks` for
   `Latest`) on the controller's authenticated channel. `flyte_core`'s
@@ -123,22 +123,22 @@ matches on. Today: `retries` sets `metadata.retries`, and `short_name` sets
 
 ## flyte_core is vendored, patched
 
-`crates/flyte` depends on `vendor/flyte_core` by path: crates.io 0.1.0 plus two
-fixes (`vendor/flyte_core/PATCHES.md`). Without them, the first demo fan-out run
+`crates/flyte` depends on `vendor/flyte_core` by path: crates.io 0.1.0 plus
+fixes that flyte-sdk has not released (`vendor/flyte_core/PATCHES.md`). Without them, the first demo fan-out run
 (ugq9mw6f6zjr99pss8w6) hung. All 19 children succeeded, and the parent never
 heard. 0.1.0 spins forever on a watch stream the server ended, and it never
 reconnects. Its channel also sends no keepalive pings, so a silently dropped
 connection hangs the same way. The first fix is backported from flyte-sdk main,
 which has not been released. The second is in neither. A git or path dependency
 on `flyte` picks up the vendored crate, so consumers need no extra
-`[patch]`. Drop the vendor once a flyte_core release carries both;
-`tests/watch_reconnect.rs` must still pass against it.
+`[patch]`. The path dependency has no `version`, so `cargo publish` fails
+until it is replaced with a flyte_core release carrying the fixes, and
+`tests/watch_reconnect.rs` must still pass against that release.
 
 ## Known gaps
 
-- **Cancel is local only.** `flyte_core::CoreBaseController::cancel_action`
-  never calls `ActionsService.Abort`; Python's controller does. The fix
-  belongs in `flyte_core`.
+- **Cancel aborts only through ActionsService.** Over StateService (without
+  `_U_USE_ACTIONS=1`) a cancelled child runs on, as in flyte-sdk main.
 - No `Vec`/`Map`/`File`/`Dir` `FlyteType`s. Collections travel as JSON strings
   for now.
 - One output (`o0`) is typed. Tuples for multiple outputs are additive on
@@ -148,10 +148,7 @@ on `flyte` picks up the vendored crate, so consumers need no extra
 
 ## Open questions
 
-1. Should `Named` fall back to a remote fetch by default (convenient, but a
-   missing `calls=` entry becomes a silent fetch of whatever is deployed), or
-   only through an explicit `TaskRef::remote`?
-2. Upstreaming: the `--task-specs` arg is a flyteplugins-rs ↔ flyte contract,
+1. Upstreaming: the `--task-specs` arg is a flyteplugins-rs ↔ flyte contract,
    versioned as `{"v": 1, "tasks": [...]}`. The Rust side rejects any version
    it does not know. Is that the right compatibility rule once both sides
    release separately?
