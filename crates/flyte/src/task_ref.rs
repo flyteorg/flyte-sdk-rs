@@ -119,7 +119,8 @@ impl TaskRef {
         t
     }
 
-    /// Display name of the call in the UI -- `override(short_name=...)`.
+    /// Display name of the call in the UI -- `override(short_name=...)`. Names
+    /// longer than 63 characters are cut to 63, as in Python.
     pub fn with_short_name(&self, short_name: impl Into<String>) -> Self {
         let mut t = self.clone();
         t.overrides.short_name = Some(Cow::Owned(short_name.into()));
@@ -712,10 +713,15 @@ fn spec_for_call(spec: &TaskSpec, overrides: &Overrides, run: &RunIdentifier) ->
         }
     }
     if let Some(short_name) = &overrides.short_name {
-        spec.short_name = short_name.to_string();
+        // The backend rejects longer names. Python cuts them the same way when
+        // it serializes a task (`task_serde._MAX_TASK_SHORT_NAME_LENGTH`).
+        spec.short_name = short_name.chars().take(MAX_SHORT_NAME_LEN).collect();
     }
     spec
 }
+
+/// The longest `TaskSpec.short_name` the backend accepts.
+const MAX_SHORT_NAME_LEN: usize = 63;
 
 async fn launch(
     state: &RuntimeState,
@@ -970,6 +976,12 @@ mod tests {
             3
         );
         assert_eq!(called.short_name, "compile-x");
+        let long = Overrides {
+            short_name: Some("é".repeat(70).into()),
+            ..Default::default()
+        };
+        let called_long = spec_for_call(&deployed, &long, &run);
+        assert_eq!(called_long.short_name, "é".repeat(63));
         // Identity and interface hash are the same whichever run it lands in.
         let a = ResolvedSpec::decode(&deployed.encode_to_vec(), None).unwrap();
         let b = ResolvedSpec::decode(&called.encode_to_vec(), None).unwrap();
