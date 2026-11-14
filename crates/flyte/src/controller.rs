@@ -12,7 +12,8 @@ use flyte_controller_base::core::CoreBaseController;
 
 use crate::error::{ConditionOutcome, Error};
 use crate::idl::{
-    ActionIdentifier, ActionPhase, ConditionAction, Literal, Message as _, RunIdentifier,
+    ActionIdentifier, ActionPhase, ConditionAction, ExecutionError, Literal, Message as _,
+    RunIdentifier, TaskSpec, execution_error,
 };
 
 /// What the SDK needs to know about a previously recorded action.
@@ -49,6 +50,40 @@ pub struct ConditionRecord {
     pub inputs_uri: String,
     pub run_output_base: String,
 }
+
+/// Everything needed to launch a task as a child action.
+pub struct TaskRecord {
+    pub parent_action_name: String,
+    pub action_name: String,
+    pub spec: TaskSpec,
+    pub group: Option<String>,
+    pub inputs_uri: String,
+    pub run_output_base: String,
+    /// Set when the child's spec is discoverable (cached).
+    pub cache_key: Option<String>,
+}
+
+/// How a child task action finished.
+pub enum TaskResult {
+    /// Succeeded or recovered. `None` when the child recorded no outputs.
+    Succeeded {
+        outputs_uri: Option<String>,
+    },
+    Failed(TaskFailure),
+}
+
+/// A child task action that did not succeed.
+pub struct TaskFailure {
+    pub phase: Option<ActionPhase>,
+    /// True when the backend attributes the failure to user code.
+    pub user: bool,
+    /// Empty when the backend reported no error document.
+    pub code: String,
+    pub message: String,
+}
+
+/// An in-flight child task: what [`Controller::cancel_task`] needs to stop it.
+pub struct StartedTask(Action);
 
 /// Cloning shares the connection, worker pool and informer cache; only the run
 /// binding is per-clone. See [`Controller::for_run`].
@@ -220,6 +255,102 @@ impl Controller {
             outcome,
             message,
         })
+    }
+
+    /// Enqueue a task as a child action without waiting for it. `AlreadyExists`
+    /// is adopted rather than failed, so a retry or recovery picks the earlier
+    /// action back up.
+    pub async fn start_task(&self, rec: TaskRecord) -> Result<StartedTask, Error> {
+        let action_id_bytes = self.action_id(&rec.action_name).encode_to_vec();
+        let action = Action::from_task(
+            &action_id_bytes,
+            rec.parent_action_name,
+            rec.group,
+            &rec.spec.encode_to_vec(),
+            rec.inputs_uri,
+            rec.run_output_base,
+            rec.cache_key,
+            None, // queue: Python's `_submit_task_ref` passes none either
+        )
+        .map_err(|e| Error::Controller(format!("building task action failed: {e}")))?;
+        self.inner
+            .start_action(action.clone())
+            .await
+            .map_err(|e| Error::Controller(format!("task submit failed: {e:?}")))?;
+        Ok(StartedTask(action))
+    }
+
+    /// Wait for a task started by [`Self::start_task`] to reach a terminal phase.
+    pub async fn wait_task(
+        &self,
+        parent_action_name: &str,
+        action_name: &str,
+    ) -> Result<TaskResult, Error> {
+        let action = self
+            .inner
+            .wait_for_action(
+                &self.run_id,
+                parent_action_name,
+                action_name,
+                ActionType::Task,
+            )
+            .await
+            .map_err(|e| Error::Controller(format!("task wait failed: {e:?}")))?;
+        if action.is_action_successful() && action.err.is_none() {
+            return Ok(TaskResult::Succeeded {
+                outputs_uri: action.realized_outputs_uri.filter(|u| !u.is_empty()),
+            });
+        }
+        let (user, code, message) = match (&action.err, &action.client_err) {
+            (
+                Some(ExecutionError {
+                    code,
+                    message,
+                    kind,
+                    ..
+                }),
+                _,
+            ) => (
+                *kind == execution_error::ErrorKind::User as i32,
+                code.clone(),
+                message.clone(),
+            ),
+            (None, Some(client_err)) => (false, "RustControllerError".into(), client_err.clone()),
+            (None, None) => (false, String::new(), format!("phase {:?}", action.phase)),
+        };
+        Ok(TaskResult::Failed(TaskFailure {
+            phase: action.phase,
+            user,
+            code,
+            message,
+        }))
+    }
+
+    /// Cancel a child task, e.g. because its caller stopped waiting for it.
+    ///
+    /// Releases the waiter and, through ActionsService (`_U_USE_ACTIONS=1`),
+    /// aborts the child server-side as Python's controller does. Over
+    /// StateService the child runs on until it finishes or the run ends.
+    pub async fn cancel_task(&self, task: StartedTask) -> Result<(), Error> {
+        let parent = task.0.parent_action_name.clone();
+        // The informer's copy knows whether the child already finished, so
+        // prefer it. Neither copy is marked started (only the launching
+        // worker's is), and cancel_action aborts only a started action: mark it,
+        // since start_task submitted it. If the enqueue is still in flight, the
+        // abort finds nothing and the child is launched anyway.
+        let mut action = match self
+            .inner
+            .get_action(task.0.action_id.clone(), &parent)
+            .await
+        {
+            Ok(Some(live)) => live,
+            _ => task.0,
+        };
+        action.mark_started();
+        self.inner
+            .cancel_action(&mut action)
+            .await
+            .map_err(|e| Error::Controller(format!("task cancel failed: {e:?}")))
     }
 
     pub async fn finalize(&self, parent_action_name: &str) {

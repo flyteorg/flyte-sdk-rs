@@ -12,7 +12,12 @@ description = "Flyte SDK for Rust (v0: single-node traces)"
 # because its default features include pyo3/auto-initialize -- which is what this
 # crate wants, since the worker embeds an interpreter. To develop against a local
 # checkout, add a [patch.crates-io] section pointing at it.
-flyte_core = "0.1"
+# Vendored 0.1.0 plus fixes flyte-sdk has not released (vendor/flyte_core/
+# PATCHES.md). Deliberately no `version`: `cargo publish` refuses a path
+# dependency without one, so a release fails instead of quietly shipping
+# against the unfixed 0.1.0. Switch to a flyte_core release that carries the
+# fixes before releasing.
+flyte_core = { path = "../../vendor/flyte_core" }
 flyte-macros = { path = "../flyte-macros", version = "0.1.0" }
 flyteidl2 = { workspace = true }
 prost = { workspace = true }
@@ -23,6 +28,7 @@ object_store = { version = "0.11", features = ["aws", "gcp", "azure"] }
 url = "2.5"
 serde = { workspace = true }
 rmp-serde = "1.3"
+serde_json = "1"
 md-5 = "0.10"
 sha2 = "0.10"
 base64 = "0.22"
@@ -34,3 +40,6 @@ bytes = "1"
 
 [dev-dependencies]
 tempfile = "3"
+# watch_reconnect.rs serves fake State/Queue services to the real controller.
+tonic = "0.12"
+tokio-stream = "0.1"

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import base64
+import json
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -20,12 +23,68 @@ from ._reuse import validate as validate_reuse
 # type to the default pod plugin, which is the plain container handling we want.
 RUST_TASK_TYPE = "rust-task"
 
+# Past this the bundle (one container arg) is worth a warning: it is stored in
+# every action of the parent and shipped to every pod.
+_BUNDLE_WARN_BYTES = 256 * 1024
+# The `--task-specs` format, read by `flyte::task_ref::register_spec_bundle`.
+BUNDLE_VERSION = 1
+
+
+def spec_bundle(calls: Sequence[TaskTemplate], sctx: SerializationContext) -> str:
+    """Serialize the tasks a Rust worker may call, for its ``--task-specs`` arg.
+
+    Each spec is built exactly as Python's ``RemoteController._submit`` builds a
+    child's spec at call time -- ``translate_task_to_wire`` under a context with
+    no input/output paths, which the node executor fills in -- so a Rust parent
+    launches the same action a Python parent would. The declared input order
+    rides along: the inputs hash is order-sensitive, and the proto interface
+    keeps only sorted names.
+
+    Nesting needs nothing extra: a callee that is itself a ``RustWorkerTask``
+    with ``calls`` serializes its own bundle into its own args.
+    """
+    # Private, but it is the one serializer whose output the backend and the
+    # Python controller agree on; reimplementing it would drift.
+    from flyte._internal.runtime.task_serde import translate_task_to_wire
+
+    child_sctx = SerializationContext(
+        project=sctx.project,
+        domain=sctx.domain,
+        org=sctx.org,
+        version=sctx.version,
+        code_bundle=sctx.code_bundle,
+        image_cache=sctx.image_cache,
+        root_dir=sctx.root_dir,
+    )
+    entries = [
+        {
+            "spec": base64.b64encode(
+                translate_task_to_wire(task, child_sctx).SerializeToString(deterministic=True)
+            ).decode(),
+            "inputs": list(task.native_interface.inputs),
+        }
+        for task in calls
+    ]
+    # `v` is the format the Rust side checks before reading anything else.
+    payload = {"v": BUNDLE_VERSION, "tasks": entries}
+    bundle = base64.b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
+    if len(bundle) > _BUNDLE_WARN_BYTES:
+        import warnings
+
+        warnings.warn(
+            f"task spec bundle for {len(calls)} callees is {len(bundle)} bytes", stacklevel=2
+        )
+    return bundle
+
 
 @dataclass(kw_only=True)
 class RustWorkerTask(TaskTemplate):
     """A container task whose image entrypoint is a compiled Rust worker."""
 
     binary: str = "worker"
+    # Tasks the worker may launch with `flyte::call_task`; their specs are
+    # serialized into its args at deploy time (see `spec_bundle`).
+    calls: Sequence[TaskTemplate] = field(default_factory=tuple)
 
     async def execute(self, *args, **kwargs):
         # Only reached under mode="local" / `flyte run --local`, which would mean
@@ -61,7 +120,7 @@ class RustWorkerTask(TaskTemplate):
         #   from the RUN_NAME / ACTION_NAME env the backend injects; they stay as
         #   forward-compatible placeholders.
         # - --run-base-dir is never an arg; it arrives only as _U_RUN_BASE.
-        return [
+        args = [
             f"/usr/local/bin/{self.binary}",
             "a0",
             "--inputs",
@@ -73,6 +132,9 @@ class RustWorkerTask(TaskTemplate):
             "--name",
             "{{.actionName}}",
         ]
+        if self.calls:
+            args += ["--task-specs", spec_bundle(self.calls, sctx)]
+        return args
 
 
 def rust_task(
@@ -87,6 +149,8 @@ def rust_task(
     image: flyte.Image | None = None,
     reuse: flyte.ReusePolicy | None = None,
     platform: str | tuple[str, ...] | None = None,
+    calls: Sequence[TaskTemplate] = (),
+    depends_on: Sequence[flyte.Environment] = (),
     **task_kwargs: Any,
 ) -> tuple[RustWorkerTask, flyte.TaskEnvironment]:
     """Declare a Rust worker as a Flyte task, plus the environment holding it.
@@ -110,6 +174,12 @@ def rust_task(
     ``union-reuse`` and the task fn carries ``#[union_reuse::main]`` instead of
     ``#[flyte::main]``. A binary built that way still runs fine without
     ``reuse``, so the two halves can be changed in either order.
+
+    Pass ``calls`` to let the worker launch other tasks with
+    ``flyte::call_task``: each callee's spec is built at deploy time and handed
+    to the worker, and the callee's environment is added to ``depends_on`` so
+    its image is built with this one. Callees need no separate deployment, and
+    may be Rust or Python tasks. ``depends_on`` adds further environments.
 
     Extra keyword arguments (``retries``, ``cache``, ``resources``, ``timeout``,
     ...) pass straight through to the underlying task template.
@@ -150,9 +220,19 @@ def rust_task(
         ),
         interface=native_interface(descriptor),
         reusable=reuse,
+        calls=tuple(calls),
         **task_kwargs,
     )
-    env = flyte.TaskEnvironment.from_task(env_name or f"{binary.replace('-', '_')}_env", task)
+    deps = list(depends_on)
+    for callee in calls:
+        callee_env = callee.parent_env() if callee.parent_env else None
+        if callee_env is None:
+            raise ValueError(f"task {callee.name} called by {task.name} belongs to no environment")
+        if all(callee_env is not d for d in deps):
+            deps.append(callee_env)
+    env = flyte.TaskEnvironment.from_task(
+        env_name or f"{binary.replace('-', '_')}_env", task, depends_on=deps or None
+    )
     # `from_task` has no `reusable` parameter, and the field is what the SDK reads
     # off the *task* when serializing. Setting it on the env too keeps the pair
     # consistent for anything that inspects the environment instead.
