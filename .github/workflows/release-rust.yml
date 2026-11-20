@@ -10,7 +10,8 @@
 # order matters -- and publishing them separately cannot work for a first
 # release, since dry-running `flyte` would look for a `flyte-macros` that is not
 # on the registry yet. Passing both to one `cargo publish` makes cargo order them
-# and resolve the sibling locally. Needs cargo 1.90+ for workspace publishing.
+# and resolve the sibling locally. Needs cargo 1.90+ for workspace publishing,
+# which rust-toolchain.toml provides.
 name: release-rust
 
 on:
@@ -34,22 +35,16 @@ jobs:
     name: Verify and dry-run publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - uses: Swatinem/rust-cache@v2
+      # Installs the toolchain and components from rust-toolchain.toml and caches builds.
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
 
       # pyo3 links libpython at build time until the pure-Rust controller lands.
       - name: Install pyo3 build dependencies
         run: sudo apt-get update && sudo apt-get install -y python3-dev pkg-config
 
-      # No `cargo fmt --check` gate here on purpose. The tree is not rustfmt-clean
-      # (15 spots across crates/flyte and crates/flyte-macros), and a release
-      # should not be blocked on style anyway — that belongs in PR CI. Run
-      # `cargo fmt --all` and add the gate there once the tree is clean.
+      # Style is gated in ci.yml; a release should not be blocked on it.
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
@@ -86,11 +81,9 @@ jobs:
       name: crates-io
       url: https://crates.io/crates/flyte
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
 
       - name: Install pyo3 build dependencies
         run: sudo apt-get update && sudo apt-get install -y python3-dev pkg-config

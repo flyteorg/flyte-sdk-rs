@@ -37,8 +37,8 @@ fmt:
 
 # Code Linting (Fails on warnings to maintain quality)
 lint:
-	cargo fmt --all -- --check
-	cargo clippy --all-targets -- -D warnings
+	cargo fmt --all --check
+	cargo clippy --workspace --all-targets -- -D warnings
 
 # Cleanup
 clean:

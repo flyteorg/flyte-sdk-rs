@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/flyte",
     "crates/flyte-macros",
@@ -18,17 +18,40 @@ license = "Apache-2.0"
 repository = "https://github.com/flyteorg/flyte-sdk-rs"
 
 [workspace.dependencies]
+# Workspace crates. The version is what `flyte` publishes against.
+flyte-macros = { path = "crates/flyte-macros", version = "0.1.0" }
+
 # Must match what flyte_core pins exactly. Both are `=` requirements and the two
 # crates pass flyteidl2 types across the boundary, so a mismatch is unresolvable
 # rather than merely unsatisfying -- bump this together with flyte_core.
 flyteidl2 = "=2.0.40"
+# Transport (ActionsService enqueue/watch, informer, auth). Goes away entirely
+# with the pure-Rust controller swap; until then it links libpython via pyo3,
+# because its default features include pyo3/auto-initialize -- which is what
+# `flyte` wants, since the worker embeds an interpreter. To develop against a
+# local checkout, add a [patch.crates-io] section pointing at it.
+flyte_core = "0.1"
+
+base64 = "0.22"
+bytes = "1"
+futures = "0.3"
+md-5 = "0.10"
+object_store = { version = "0.11", features = ["aws", "gcp", "azure"] }
+proc-macro2 = "1"
 prost = { version = "0.13", features = ["std"] }
-tokio = { version = "1", features = ["full"] }
 pyo3 = { version = "0.24", features = ["abi3-py310"] }
 pyo3-async-runtimes = { version = "0.24", features = ["tokio-runtime"] }
+quote = "1"
+rmp-serde = "1.3"
 serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+syn = { version = "2", features = ["full"] }
+tempfile = "3"
 thiserror = "1"
+tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2.5"
 
 # Examples depend on `flyte` by version, exactly as a user's crate does -- which
 # is also what lets the worker image build from the example directory alone.
